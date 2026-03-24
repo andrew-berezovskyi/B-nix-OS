@@ -11,8 +11,7 @@ extern void sleep(uint32_t seconds);
 extern uint32_t pmm_get_free_block_count(void);
 extern uint32_t pmm_get_max_blocks(void); // Нам треба буде додати цю функцію в pmm.c!
 
-#define BUFFER_SIZE 256
-char command_buffer[BUFFER_SIZE];
+char command_buffer[SHELL_BUFFER_SIZE];
 int buffer_index = 0;
 
 int strcmp(const char* s1, const char* s2) {
@@ -168,7 +167,7 @@ void shell_handle_keypress(char c) {
         }
     } 
     else {
-        if (buffer_index < BUFFER_SIZE - 1) {
+        if (buffer_index < SHELL_BUFFER_SIZE - 1) {
             command_buffer[buffer_index++] = c;
             terminal_putchar(c);
         }

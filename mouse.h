@@ -8,6 +8,7 @@
 extern int mouse_x;
 extern int mouse_y;
 extern bool mouse_left_pressed;
+extern bool mouse_right_pressed;
 
 void init_mouse(void);
 void draw_cursor(int x, int y);

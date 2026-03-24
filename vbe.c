@@ -1,21 +1,23 @@
 #include "vbe.h"
 #include "font.h"
 #include "kheap.h"
+#include "kstring.h"
 #include "rtc.h" 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
+
+#ifndef __bool_true_false_are_defined
+#define bool _Bool
+#define true 1
+#define false 0
+#define __bool_true_false_are_defined 1
+#endif
 
 extern uint8_t* main_font_data;
 
 // ==============================================================================
-// 1. ХИТРИЙ ТРЮК ДЛЯ ЯДРА (Блокує всі конфлікти зі <string.h>)
-// ==============================================================================
-#define memcpy __builtin_memcpy
-#define memset __builtin_memset
-#define strlen __builtin_strlen
-
-// ==============================================================================
-// 2. МАТЕМАТИКА ДЛЯ ВЕКТОРНИХ ШРИФТІВ ТА КАРТИНОК
+// 1. МАТЕМАТИКА ДЛЯ ВЕКТОРНИХ ШРИФТІВ ТА КАРТИНОК
 // ==============================================================================
 double fabs(double x) { return x < 0 ? -x : x; }
 double floor(double x) { return (double)((int)x); }
@@ -51,7 +53,7 @@ double pow(double x, double y) {
 }
 
 // ==============================================================================
-// 3. НАЛАШТУВАННЯ БІБЛІОТЕКИ STB IMAGE (ДЛЯ PNG КАРТИНОК)
+// 2. НАЛАШТУВАННЯ БІБЛІОТЕКИ STB IMAGE (ДЛЯ PNG КАРТИНОК)
 // ==============================================================================
 void* stbi_realloc_sized(void* ptr, size_t old_size, size_t new_size) {
     if (new_size == 0) { kfree(ptr); return NULL; }
@@ -82,7 +84,7 @@ void* stbi_realloc_sized(void* ptr, size_t old_size, size_t new_size) {
 #include "stb_image.h"
 
 // ==============================================================================
-// 4. НАЛАШТУВАННЯ БІБЛІОТЕКИ STB TRUETYPE (ДЛЯ ШРИФТІВ)
+// 3. НАЛАШТУВАННЯ БІБЛІОТЕКИ STB TRUETYPE (ДЛЯ ШРИФТІВ)
 // ==============================================================================
 #define STBTT_malloc(x,u)  ((void)(u), kmalloc(x))
 #define STBTT_free(x,u)    ((void)(u), kfree(x))
@@ -106,10 +108,16 @@ void* stbi_realloc_sized(void* ptr, size_t old_size, size_t new_size) {
 #include "stb_truetype.h"
 
 // ==============================================================================
-// 5. ГРАФІЧНИЙ ДРАЙВЕР ТА GUI ФУНКЦІЇ
+// 4. ГРАФІЧНИЙ ДРАЙВЕР ТА GUI ФУНКЦІЇ
 // ==============================================================================
 static vbe_info_t vbe;
 static uint32_t backbuffer[1280 * 720];
+static uint32_t* background_cache = NULL;
+static uint32_t background_cache_w = 0;
+static uint32_t background_cache_h = 0;
+static uint32_t* icon_cache = NULL;
+static int icon_cache_w = 0;
+static int icon_cache_h = 0;
 
 void init_graphics(uint32_t* fb_addr, uint32_t w, uint32_t h, uint32_t p, uint8_t b) {
     vbe.framebuffer = fb_addr;
@@ -209,6 +217,27 @@ void draw_ttf_string(int x, int y, uint8_t* font_buffer, const char* str, float 
     }
 }
 
+int measure_ttf_text_width(uint8_t* font_buffer, const char* str, float size) {
+    stbtt_fontinfo font;
+    if (!font_buffer || !str) return 0;
+    if (!stbtt_InitFont(&font, font_buffer, 0)) return 0;
+
+    float scale = stbtt_ScaleForPixelHeight(&font, size);
+    int total = 0;
+    for (int i = 0; str[i] != '\0'; i++) {
+        int advance, lsb;
+        stbtt_GetCodepointHMetrics(&font, str[i], &advance, &lsb);
+        total += (int)(advance * scale);
+    }
+    return total;
+}
+
+void draw_ttf_char(int x, int y, uint8_t* font_buffer, char c, float size, uint32_t color) {
+    stbtt_fontinfo font;
+    if (!stbtt_InitFont(&font, font_buffer, 0)) return;
+    draw_ttf_char_internal(&font, x, y, c, size, color);
+}
+
 void draw_filled_circle(int x, int y, int r, uint32_t color) {
     for (int dy = -r; dy <= r; dy++) {
         for (int dx = -r; dx <= r; dx++) {
@@ -265,7 +294,7 @@ void draw_top_panel(uint32_t w, uint32_t h) {
 }
 
 // ==============================================================================
-// 6. ФУНКЦІЇ МАЛЮВАННЯ КАРТИНОК З ПАМ'ЯТІ (PNG) (З ПЕРЕВОРОТОМ)
+// 5. ФУНКЦІЇ МАЛЮВАННЯ КАРТИНОК З ПАМ'ЯТІ (PNG) (З ПЕРЕВОРОТОМ)
 // ==============================================================================
 void draw_background_image(uint8_t* img_data, uint32_t img_size) {
     int width, height, channels;
@@ -273,18 +302,21 @@ void draw_background_image(uint8_t* img_data, uint32_t img_size) {
 
     if (!pixels) return; 
 
+    int dst_x0 = ((int)vbe.width - width) / 2;
+    int dst_y0 = ((int)vbe.height - height) / 2;
     for (int y = 0; y < height; y++) {
+        int dst_y = dst_y0 + y;
+        if (dst_y < 0 || dst_y >= (int)vbe.height) continue;
+        uint32_t* row = &backbuffer[dst_y * vbe.width];
+        int src_y = height - 1 - y; // Flip vertically for upside-down source images.
         for (int x = 0; x < width; x++) {
-            if(y >= vbe.height || x >= vbe.width) continue; 
-            
-            // ПЕРЕВЕРТАЄМО КАРТИНКУ ПО ВЕРТИКАЛІ
-            int src_y = height - 1 - y;
+            int dst_x = dst_x0 + x;
+            if (dst_x < 0 || dst_x >= (int)vbe.width) continue;
             int pixel_index = (src_y * width + x) * 3;
-            
             uint8_t r = pixels[pixel_index];
             uint8_t g = pixels[pixel_index + 1];
             uint8_t b = pixels[pixel_index + 2];
-            backbuffer[y * vbe.width + x] = (r << 16) | (g << 8) | b;
+            row[dst_x] = (r << 16) | (g << 8) | b;
         }
     }
     stbi_image_free(pixels);
@@ -315,9 +347,9 @@ void draw_image_with_alpha(uint8_t* img_data, uint32_t img_size, int x, int y) {
             if (alpha == 0) continue; 
 
             if (alpha == 255) {
-                draw_pixel(screen_x, screen_y, (r << 16) | (g << 8) | b);
+                backbuffer[screen_y * vbe.width + screen_x] = (r << 16) | (g << 8) | b;
             } else {
-                uint32_t bg_color = get_pixel(screen_x, screen_y);
+                uint32_t bg_color = backbuffer[screen_y * vbe.width + screen_x];
                 uint8_t r_bg = (bg_color >> 16) & 0xFF;
                 uint8_t g_bg = (bg_color >> 8) & 0xFF;
                 uint8_t b_bg = bg_color & 0xFF;
@@ -326,9 +358,151 @@ void draw_image_with_alpha(uint8_t* img_data, uint32_t img_size, int x, int y) {
                 uint8_t g_out = (g * alpha + g_bg * (255 - alpha)) >> 8;
                 uint8_t b_out = (b * alpha + b_bg * (255 - alpha)) >> 8;
 
-                draw_pixel(screen_x, screen_y, (r_out << 16) | (g_out << 8) | b_out);
+                backbuffer[screen_y * vbe.width + screen_x] = (r_out << 16) | (g_out << 8) | b_out;
             }
         }
     }
     stbi_image_free(pixels);
+}
+
+void draw_image_with_alpha_centered(uint8_t* img_data, uint32_t img_size, int center_x, int center_y) {
+    int width, height, channels;
+    unsigned char* pixels = stbi_load_from_memory(img_data, img_size, &width, &height, &channels, 4);
+    if (!pixels) return;
+
+    int start_x = center_x - (width / 2);
+    int start_y = center_y - (height / 2);
+    stbi_image_free(pixels);
+    draw_image_with_alpha(img_data, img_size, start_x, start_y);
+}
+
+bool cache_background_image(uint8_t* img_data, uint32_t img_size) {
+    int src_w, src_h, channels;
+    unsigned char* pixels = stbi_load_from_memory(img_data, img_size, &src_w, &src_h, &channels, 3);
+    if (!pixels) return false;
+
+    uint32_t target_w = vbe.width;
+    uint32_t target_h = vbe.height;
+    uint32_t* new_cache = (uint32_t*)kmalloc(target_w * target_h * sizeof(uint32_t));
+    if (!new_cache) {
+        stbi_image_free(pixels);
+        return false;
+    }
+
+    for (uint32_t i = 0; i < target_w * target_h; i++) new_cache[i] = 0x000000;
+
+    int dst_x0 = ((int)target_w - src_w) / 2;
+    int dst_y0 = ((int)target_h - src_h) / 2;
+    for (int y = 0; y < src_h; y++) {
+        int dst_y = dst_y0 + y;
+        if (dst_y < 0 || dst_y >= (int)target_h) continue;
+        int src_y = src_h - 1 - y;
+        uint32_t* row = &new_cache[dst_y * target_w];
+        for (int x = 0; x < src_w; x++) {
+            int dst_x = dst_x0 + x;
+            if (dst_x < 0 || dst_x >= (int)target_w) continue;
+            int pixel_index = (src_y * src_w + x) * 3;
+            uint8_t r = pixels[pixel_index];
+            uint8_t g = pixels[pixel_index + 1];
+            uint8_t b = pixels[pixel_index + 2];
+            row[dst_x] = (r << 16) | (g << 8) | b;
+        }
+    }
+
+    if (background_cache) kfree(background_cache);
+    background_cache = new_cache;
+    background_cache_w = target_w;
+    background_cache_h = target_h;
+    stbi_image_free(pixels);
+    return true;
+}
+
+void draw_cached_background(void) {
+    if (!background_cache || background_cache_w != vbe.width || background_cache_h != vbe.height) {
+        clear_screen(0x000000);
+        return;
+    }
+    memcpy(backbuffer, background_cache, vbe.width * vbe.height * sizeof(uint32_t));
+}
+
+void clear_background_cache(void) {
+    if (background_cache) {
+        kfree(background_cache);
+        background_cache = NULL;
+    }
+    background_cache_w = 0;
+    background_cache_h = 0;
+}
+
+bool cache_icon_image(uint8_t* img_data, uint32_t img_size) {
+    int width, height, channels;
+    unsigned char* pixels = stbi_load_from_memory(img_data, img_size, &width, &height, &channels, 4);
+    if (!pixels) return false;
+
+    uint32_t* rgba = (uint32_t*)kmalloc((size_t)width * (size_t)height * sizeof(uint32_t));
+    if (!rgba) {
+        stbi_image_free(pixels);
+        return false;
+    }
+
+    for (int y = 0; y < height; y++) {
+        int src_y = height - 1 - y;
+        for (int x = 0; x < width; x++) {
+            int i = (src_y * width + x) * 4;
+            uint32_t r = pixels[i];
+            uint32_t g = pixels[i + 1];
+            uint32_t b = pixels[i + 2];
+            uint32_t a = pixels[i + 3];
+            rgba[y * width + x] = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+
+    if (icon_cache) kfree(icon_cache);
+    icon_cache = rgba;
+    icon_cache_w = width;
+    icon_cache_h = height;
+    stbi_image_free(pixels);
+    return true;
+}
+
+void draw_cached_icon_centered(int center_x, int center_y) {
+    if (!icon_cache) return;
+    int start_x = center_x - (icon_cache_w / 2);
+    int start_y = center_y - (icon_cache_h / 2);
+    for (int y = 0; y < icon_cache_h; y++) {
+        int dy = start_y + y;
+        if (dy < 0 || dy >= (int)vbe.height) continue;
+        uint32_t* row = &backbuffer[dy * vbe.width];
+        for (int x = 0; x < icon_cache_w; x++) {
+            int dx = start_x + x;
+            if (dx < 0 || dx >= (int)vbe.width) continue;
+            uint32_t px = icon_cache[y * icon_cache_w + x];
+            uint8_t a = (uint8_t)(px >> 24);
+            if (a == 0) continue;
+            uint8_t r = (uint8_t)(px >> 16);
+            uint8_t g = (uint8_t)(px >> 8);
+            uint8_t b = (uint8_t)px;
+            if (a == 255) {
+                row[dx] = (r << 16) | (g << 8) | b;
+            } else {
+                uint32_t bg = row[dx];
+                uint8_t rb = (uint8_t)(bg >> 16);
+                uint8_t gb = (uint8_t)(bg >> 8);
+                uint8_t bb = (uint8_t)bg;
+                uint8_t ro = (r * a + rb * (255 - a)) >> 8;
+                uint8_t go = (g * a + gb * (255 - a)) >> 8;
+                uint8_t bo = (b * a + bb * (255 - a)) >> 8;
+                row[dx] = (ro << 16) | (go << 8) | bo;
+            }
+        }
+    }
+}
+
+void clear_icon_cache(void) {
+    if (icon_cache) {
+        kfree(icon_cache);
+        icon_cache = NULL;
+    }
+    icon_cache_w = 0;
+    icon_cache_h = 0;
 }

@@ -7,6 +7,7 @@
 int mouse_x = 640;
 int mouse_y = 360;
 bool mouse_left_pressed = false;
+bool mouse_right_pressed = false;
 
 uint8_t mouse_cycle = 0;
 int8_t mouse_byte[3];
@@ -61,6 +62,7 @@ void mouse_handler_main() {
                     mouse_byte[0] = mouse_in;
                     if (!(mouse_in & 0x08)) break; 
                     mouse_left_pressed = (mouse_in & 0x01) != 0;
+                    mouse_right_pressed = (mouse_in & 0x02) != 0;
                     mouse_cycle++; break;
                 case 1:
                     mouse_byte[1] = mouse_in;
