@@ -62,6 +62,9 @@ extern void init_timer(uint32_t frequency);
 extern void itoa(uint32_t num, char* str);
 int custom_strcmp(const char *s1, const char *s2);
 
+// [ВИПРАВЛЕННЯ 1]: Додано прототип, щоб функція print() знала про термінал
+static void term_gui_feed(char c);
+
 static uint32_t screen_w = 0;
 static uint32_t screen_h = 0;
 static uint8_t last_second = 255;
@@ -72,6 +75,9 @@ typedef enum {
 } os_state_t;
 
 os_state_t current_state = STATE_LOGIN;
+
+// [ВИПРАВЛЕННЯ 2]: Перенесли змінну вище, щоб try_login() могла її змінити
+bool win_open = false; 
 
 // --- ЗМІННІ ДЛЯ ЛОГІНУ ---
 char username_buffer[32] = "";
@@ -129,7 +135,7 @@ static void try_login(void) {
 }
 
 // --- ЗМІННІ РОБОЧОГО СТОЛУ ТА ВІКОН ---
-bool win_open = false; int win_x = 300; int win_y = 200; int win_w = 600; int win_h = 400;
+int win_x = 300; int win_y = 200; int win_w = 600; int win_h = 400;
 bool is_dragging = false; int drag_offset_x = 0; int drag_offset_y = 0; int selected_file = -1; 
 bool viewer_open = false; int viewer_x = 350; int viewer_y = 250; int viewer_w = 500; int viewer_h = 300;
 bool viewer_dragging = false; int viewer_drag_x = 0; int viewer_drag_y = 0; int viewer_file_id = -1; 
