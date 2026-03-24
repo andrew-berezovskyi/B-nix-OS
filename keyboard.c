@@ -1,6 +1,9 @@
+#include "keyboard.h" // ПІДКЛЮЧАЄМО НАШ НОВИЙ ФАЙЛ
 #include "io.h"
-#include "shell.h" // ДОДАНО: підключаємо нашу оболонку
 #include <stdint.h>
+
+volatile char last_key_pressed = 0;
+volatile bool key_ready = false;
 
 // ---------------------------------------------------------------------------
 // Scancode Set 1 — звичайний режим (без Shift)
@@ -80,15 +83,9 @@ static const char kbd_us_shift[128] = {
 /*54*/  0,0,0,0,0,0,0,0,0,0,0
 };
 
-// ---------------------------------------------------------------------------
-// Стан клавіатури
-// ---------------------------------------------------------------------------
 static volatile uint8_t shift_pressed = 0;
 static volatile uint8_t caps_lock_on  = 0;
 
-// ---------------------------------------------------------------------------
-// Очікування готовності PS/2 контролера
-// ---------------------------------------------------------------------------
 static void kb_wait_write(void) {
     uint32_t i = 100000;
     while (--i && (inb(0x64) & 0x02));
@@ -99,9 +96,6 @@ static void kb_wait_read(void) {
     while (--i && !(inb(0x64) & 0x01));
 }
 
-// ---------------------------------------------------------------------------
-// Вимивання буфера
-// ---------------------------------------------------------------------------
 void keyboard_flush(void) {
     uint32_t i = 1000;
     while (--i && (inb(0x64) & 0x01)) {
@@ -109,61 +103,39 @@ void keyboard_flush(void) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Ініціалізація PS/2 клавіатури
-// ---------------------------------------------------------------------------
 void init_keyboard(void) {
     keyboard_flush();
-
     kb_wait_write();
-    outb(0x64, 0xAE);       // Enable first PS/2 port
-
+    outb(0x64, 0xAE);
     kb_wait_write();
-    outb(0x64, 0x20);       // Read Command Byte
+    outb(0x64, 0x20);
     kb_wait_read();
     uint8_t cmd = inb(0x60);
-
-    cmd |= 0x01;             // Bit 0: enable IRQ1
-    cmd &= (uint8_t)~0x10;  // Bit 4: do not disable keyboard
-
+    cmd |= 0x01;
+    cmd &= (uint8_t)~0x10;
     kb_wait_write();
-    outb(0x64, 0x60);       // Write Command Byte
+    outb(0x64, 0x60);
     kb_wait_write();
     outb(0x60, cmd);
-
     keyboard_flush();
 }
 
-// ---------------------------------------------------------------------------
-// Обробник IRQ1 — викликається з boot.asm → keyboard_handler
-// ---------------------------------------------------------------------------
 void keyboard_handler_main(void) {
     uint8_t keycode = inb(0x60);
 
-    // ------------------------------------------------------------------
-    // ВІДПУСКАННЯ клавіші (bit 7 = 1, тобто keycode >= 0x80)
-    // ------------------------------------------------------------------
     if (keycode & 0x80) {
         uint8_t sc = keycode & 0x7F;
-        if (sc == 0x2A || sc == 0x36) {
-            shift_pressed = 0;
-        }
-        outb(0x20, 0x20);   // EOI
+        if (sc == 0x2A || sc == 0x36) shift_pressed = 0;
+        outb(0x20, 0x20);
         return;
     }
 
-    // ------------------------------------------------------------------
-    // НАТИСКАННЯ
-    // ------------------------------------------------------------------
-
-    // Shift
     if (keycode == 0x2A || keycode == 0x36) {
         shift_pressed = 1;
         outb(0x20, 0x20);
         return;
     }
 
-    // Caps Lock — toggle
     if (keycode == 0x3A) {
         caps_lock_on ^= 1;
         outb(0x20, 0x20);
@@ -175,24 +147,18 @@ void keyboard_handler_main(void) {
         return;
     }
 
-    // ------------------------------------------------------------------
-    // Визначаємо символ
-    // ------------------------------------------------------------------
     char c = shift_pressed ? kbd_us_shift[keycode] : kbd_us[keycode];
 
-    // Caps Lock діє тільки на літери
     if (caps_lock_on) {
-        if (!shift_pressed && c >= 'a' && c <= 'z') {
-            c = (char)(c - 32);   // a-z → A-Z
-        } else if (shift_pressed && c >= 'A' && c <= 'Z') {
-            c = (char)(c + 32);   // Shift+CapsLock → нижній регістр
-        }
+        if (!shift_pressed && c >= 'a' && c <= 'z') c = (char)(c - 32);
+        else if (shift_pressed && c >= 'A' && c <= 'Z') c = (char)(c + 32);
     }
 
+    // НОВА ЛОГІКА: Передаємо символ ядру!
     if (c != 0) {
-        // ЗМІНЕНО: Тепер ми відправляємо символ у наш Shell, а не напряму на екран
-        shell_handle_keypress(c);
+        last_key_pressed = c;
+        key_ready = true;
     }
 
-    outb(0x20, 0x20);   // EOI
+    outb(0x20, 0x20);
 }

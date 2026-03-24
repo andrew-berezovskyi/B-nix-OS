@@ -22,6 +22,10 @@ build_kernel:
 build_iso: build_kernel
 	mkdir -p iso/boot/grub
 	cp myos.bin iso/boot/myos.bin
+	cp font.ttf iso/boot/font.ttf
+	cp bg.png iso/boot/bg.png
+	cp icon.png iso/boot/icon.png
+	cp grub.cfg iso/boot/grub/grub.cfg
 	grub-mkrescue -o b-nix.iso iso
 
 run:

@@ -36,4 +36,12 @@ typedef struct multiboot_info {
     uint8_t  color_info[6];
 } __attribute__((packed)) multiboot_info_t;
 
+// Структура модуля, який завантажує GRUB
+typedef struct {
+    uint32_t mod_start;
+    uint32_t mod_end;
+    uint32_t string;
+    uint32_t reserved;
+} multiboot_module_t;
+
 #endif

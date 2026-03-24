@@ -13,4 +13,8 @@ void* kmalloc(size_t size);
 // Звільнення пам'яті
 void kfree(void* ptr);
 
+// Це скаже бібліотеці stb використовувати наш менеджер пам'яті
+#define STBTT_malloc(x,u)  ((void)(u), kmalloc(x))
+#define STBTT_free(x,u)    ((void)(u), kfree(x))
+
 #endif

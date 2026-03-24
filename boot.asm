@@ -18,12 +18,26 @@ extern kernel_main
 _start:
     cli
     mov esp, stack_top
+
+    ; 1. РЯТУЄМО ВАЖЛИВІ ДАНІ ОДРАЗУ!
+    ; Закидаємо адресу multiboot (ebx) та магічне число (eax) на стек,
+    ; де їх і чекає наша функція kernel_main.
     push ebx
     push eax
+
+    ; 2. Вмикаємо FPU (тепер регістр eax можна безпечно використовувати)
+    mov eax, cr0
+    and eax, 0xFFFFFFFB      ; Скидаємо біт EM
+    or eax, 0x00000002       ; Встановлюємо біт MP
+    mov cr0, eax
+    fninit                   ; Ініціалізуємо стан FPU
+
+    ; 3. Запускаємо ядро (аргументи вже лежать на стеку)
     call kernel_main
 .hang:
     hlt
     jmp .hang
+    
 
 global gdt_flush
 gdt_flush:
@@ -63,7 +77,6 @@ timer_handler:
     popad
     iretd
 
-; --- ДОДАНО ДЛЯ МИШІ ---
 extern mouse_handler_main
 global mouse_handler
 mouse_handler:
