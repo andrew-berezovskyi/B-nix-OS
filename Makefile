@@ -12,7 +12,8 @@ ISO_DIR = iso/boot
 C_SOURCES = core/kernel.c core/gdt.c core/idt.c \
             drivers/vbe.c drivers/keyboard.c drivers/mouse.c drivers/rtc.c drivers/timer.c \
             mm/pmm.c mm/vmm.c mm/kheap.c \
-            fs/fs.c fs/shell.c
+            fs/fs.c fs/shell.c \
+            gui/desktop.c
 
 # Перетворюємо імена .c файлів на .o файли в папці build
 OBJS = $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(BUILD_DIR)/core/boot.o
