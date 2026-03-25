@@ -19,25 +19,20 @@ _start:
     cli
     mov esp, stack_top
 
-    ; 1. РЯТУЄМО ВАЖЛИВІ ДАНІ ОДРАЗУ!
-    ; Закидаємо адресу multiboot (ebx) та магічне число (eax) на стек,
-    ; де їх і чекає наша функція kernel_main.
     push ebx
     push eax
 
-    ; 2. Вмикаємо FPU (тепер регістр eax можна безпечно використовувати)
+    ; Вмикаємо FPU
     mov eax, cr0
-    and eax, 0xFFFFFFFB      ; Скидаємо біт EM
-    or eax, 0x00000002       ; Встановлюємо біт MP
+    and eax, 0xFFFFFFFB
+    or eax, 0x00000002
     mov cr0, eax
-    fninit                   ; Ініціалізуємо стан FPU
+    fninit
 
-    ; 3. Запускаємо ядро (аргументи вже лежать на стеку)
     call kernel_main
 .hang:
     hlt
     jmp .hang
-    
 
 global gdt_flush
 gdt_flush:
@@ -68,21 +63,45 @@ keyboard_handler:
     popad
     iretd
 
-extern timer_handler_main
-global timer_handler
-timer_handler:
-    pushad
-    cld
-    call timer_handler_main
-    popad
-    iretd
-
 extern mouse_handler_main
 global mouse_handler
 mouse_handler:
     pushad
     cld
     call mouse_handler_main
+    popad
+    iretd
+
+; ==============================================================
+; ОНОВЛЕНО: ОБРОБНИК ТАЙМЕРА (ПЛАНУВАЛЬНИК)
+; ==============================================================
+extern timer_handler_main
+global timer_handler
+timer_handler:
+    pushad                  ; Зберігаємо регістри поточної задачі
+    
+    push esp                ; Передаємо вказівник на context_t (поточний ESP)
+    call timer_handler_main ; Викликаємо планувальник
+    mov esp, eax            ; МАГІЯ: Перемикаємо ESP на стек нової задачі!
+    
+    ; Тепер ми на стеку нової задачі, відновлюємо її регістри
+    popad
+    iretd
+
+; ==============================================================
+; СИСТЕМНІ ВИКЛИКИ (INT 0x80)
+; ==============================================================
+extern syscall_handler_main
+global syscall_handler
+syscall_handler:
+    pushad
+    push edx
+    push ecx
+    push ebx
+    push eax
+    call syscall_handler_main
+    add esp, 16
+    mov [esp + 28], eax 
     popad
     iretd
 

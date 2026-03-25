@@ -22,4 +22,7 @@ typedef struct idt_ptr_struct idt_ptr_t;
 
 void init_idt(void);
 
+// Оголошуємо наш новий шлюз з boot.asm
+extern void syscall_handler(void);
+
 #endif

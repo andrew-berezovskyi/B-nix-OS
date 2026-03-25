@@ -9,7 +9,7 @@ BUILD_DIR = build
 ISO_DIR = iso/boot
 
 # Списки файлів
-C_SOURCES = core/kernel.c core/gdt.c core/idt.c \
+C_SOURCES = core/kernel.c core/gdt.c core/idt.c core/syscall.c core/sys_api.c \
             drivers/vbe.c drivers/keyboard.c drivers/mouse.c drivers/rtc.c drivers/timer.c drivers/ata.c \
             mm/pmm.c mm/vmm.c mm/kheap.c \
             fs/fs.c fs/shell.c \

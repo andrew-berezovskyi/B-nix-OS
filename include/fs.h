@@ -4,20 +4,42 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define MAX_FILES 10
-#define FS_DISK_START_LBA 100 // Почнемо записувати файли з 100-го сектора, щоб не зачепити ядро
+// Прапорці для відкриття файлів
+#define O_RDONLY 1
+#define O_WRONLY 2
+#define O_CREAT  4
 
+// Типи Inode
+#define FS_TYPE_FREE 0
+#define FS_TYPE_FILE 1
+#define FS_TYPE_DIR  2
+
+// Структура для читання папок (Directory Entry)
 typedef struct {
-    char name[32];
-    char content[256];
-    uint32_t size;
-    bool is_used;
-} vfs_file_t;
+    char name[28];
+    uint32_t inode;
+    uint8_t type;
+} fs_dirent_t;
 
-extern vfs_file_t virtual_fs[MAX_FILES];
+// Ініціалізація Файлової Системи
+void init_fs(void); 
 
-void init_vfs(void);
-void vfs_save_to_disk(void); // Записати масив на диск
-void vfs_load_from_disk(void); // Прочитати масив з диска
+// ==========================================
+// CORE API (Робота з файлами через Descriptors)
+// ==========================================
+int fs_open(const char* path, int flags);
+int fs_read(int fd, void* buf, int size);
+int fs_write(int fd, const void* buf, int size);
+void fs_close(int fd);
+
+// ==========================================
+// DIRECTORY API (Навігація по папках)
+// ==========================================
+int fs_mkdir(const char* path);
+int fs_opendir(const char* path);
+bool fs_readdir(int dir_fd, fs_dirent_t* out_ent);
+void fs_closedir(int dir_fd);
+
+int fs_unlink(const char* path);
 
 #endif
