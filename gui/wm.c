@@ -9,12 +9,13 @@
 #define DESKTOP_TITLE_H     32
 
 window_t windows[MAX_WINDOWS];
-int focused_window = -1; // Індекс вікна, яке зараз "зверху"
+int focused_window = -1; // Індекс вікна, яке зараз "зверху" (-1 = робочий стіл порожній)
 bool is_dragging = false;
 int dragging_window = -1;
 int drag_off_x = 0; int drag_off_y = 0;
 
 // --- ДОПОМІЖНІ ФУНКЦІЇ ---
+extern size_t strlen(const char* str); // Щоб не було попереджень
 static int custom_strcmp(const char *s1, const char *s2) {
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
@@ -49,7 +50,7 @@ static void vfs_create_named_file(const char* prefix, const char* ext, const cha
 }
 
 // ==============================================================================
-// ПРОГРАМА 1: ТЕРМІНАЛ
+// ПРОГРАМА 1: ТЕРМІНАЛ (Індекс 0)
 // ==============================================================================
 #define TERM_LINE_CAP 40
 #define TERM_LINE_W 120
@@ -64,9 +65,7 @@ static void term_gui_flush_line(void) {
     term_cur_len = 0; term_cur_line[0] = '\0';
 }
 void term_gui_feed(char c) {
-    // ВИПРАВЛЕНО: Перевіряємо об'єкт вікна замість старої змінної
     if (current_state != STATE_DESKTOP || !windows[0].is_open) return;
-    
     if (c == '\b') { if (term_cur_len > 0) { term_cur_len--; term_cur_line[term_cur_len] = '\0'; } return; }
     if (c == '\n' || c == '\r') { if (c == '\n') term_gui_flush_line(); return; }
     if (term_cur_len < TERM_LINE_W - 2) { term_cur_line[term_cur_len++] = c; term_cur_line[term_cur_len] = '\0'; }
@@ -91,12 +90,14 @@ void app_term_draw(int x, int y, int w, int h) {
 void app_term_key(char c) { shell_handle_keypress(c); }
 
 // ==============================================================================
-// ПРОГРАМА 2: ПРОВІДНИК (FILE MANAGER)
+// ПРОГРАМА 2: ПРОВІДНИК (Індекс 1)
 // ==============================================================================
 static int fm_nav_sel = 0;
 static const char* fm_nav_paths[] = { "/home", "/boot", "/etc", "/var" };
+#define FM_NAV_COUNT 4
 static int selected_file = -1;
 static bool context_menu_open = false; static int context_x = 0; static int context_y = 0;
+static int viewer_file_id = -1; // Для читалки
 
 static bool vfs_entry_is_folder(int i) {
     if (i < 0 || i >= MAX_FILES || !virtual_fs[i].is_used) return false;
@@ -122,8 +123,11 @@ void app_fm_draw(int x, int y, int w, int h) {
     for (int i = 0; i < MAX_FILES; i++) {
         if (!virtual_fs[i].is_used) continue;
         if (selected_file == i) draw_filled_rect(fx - 4, fy - 4, 84, 88, 0xD0E8FF);
-        if (vfs_entry_is_folder(i)) { draw_filled_rect(fx, fy, 40, 32, 0x5B9FED); } 
-        else { draw_filled_rect(fx, fy, 40, 32, 0xF5F5F5); draw_rect_outline(fx, fy, 40, 32, 0xCCCCCC); }
+        if (vfs_entry_is_folder(i)) { 
+            draw_icon_folder(fx, fy); 
+        } else { 
+            draw_icon_file(fx + 4, fy - 8); // +4 та -8 щоб відцентрувати файл відносно папки
+        }
         if (main_font_data) draw_ttf_string(fx - 4, fy + 56, main_font_data, virtual_fs[i].name, 11.0f, 0x222222);
         col++; if (col >= max_cols) { col = 0; fx = gx; fy += 100; } else fx += 92;
     }
@@ -150,16 +154,38 @@ void app_fm_click(int mx, int my, bool right_click) {
         context_menu_open = false; return;
     }
 
-    int win_idx = focused_window;
-    int left_w = 168; int inner_y = windows[win_idx].y + DESKTOP_TITLE_H;
-    int gx = windows[win_idx].x + left_w + 16; int gy = inner_y + 16;
+    int win_idx = 1; // Індекс провідника
+    int wx = windows[win_idx].x; int wy = windows[win_idx].y;
+    int left_w = 168; int inner_y = wy + DESKTOP_TITLE_H;
+    
+    // 1. Клік по лівому меню (Sidebar)
+    if (mx >= wx && mx < wx + left_w) {
+        for (int i = 0; i < FM_NAV_COUNT; i++) {
+            int ly = inner_y + 12 + i * 28;
+            if (my >= ly - 4 && my < ly + 24) { fm_nav_sel = i; selected_file = -1; return; }
+        }
+        return;
+    }
+
+    // 2. Клік по файлах
+    int gx = wx + left_w + 16; int gy = inner_y + 16;
     int max_cols = (windows[win_idx].width - left_w - 32) / 92; if (max_cols < 1) max_cols = 1;
     
     int fx = gx, fy = gy, col = 0; bool hit_file = false;
     for (int i = 0; i < MAX_FILES; i++) {
         if (!virtual_fs[i].is_used) continue;
         if (mx >= fx - 4 && mx < fx + 84 && my >= fy - 4 && my < fy + 88) {
-            selected_file = i; hit_file = true; break;
+            hit_file = true;
+            // Якщо файл вже був вибраний (подвійний клік) - відкриваємо його
+            if (selected_file == i && !vfs_entry_is_folder(i)) {
+                viewer_file_id = i;
+                windows[2].is_open = true; // Відкриваємо вікно Viewer
+                custom_strcpy(windows[2].title, virtual_fs[i].name); // Міняємо заголовок вікна на ім'я файлу
+                focused_window = 2; // Фокусуємо на ньому
+            } else {
+                selected_file = i;
+            }
+            break;
         }
         col++; if (col >= max_cols) { col = 0; fx = gx; fy += 100; } else fx += 92;
     }
@@ -167,14 +193,23 @@ void app_fm_click(int mx, int my, bool right_click) {
 }
 
 // ==============================================================================
+// ПРОГРАМА 3: ПЕРЕГЛЯДАЧ ФАЙЛІВ (Індекс 2)
+// ==============================================================================
+void app_viewer_draw(int x, int y, int w, int h) {
+    if (viewer_file_id == -1) return;
+    if (main_font_data) {
+        draw_ttf_string(x + 12, y + 16, main_font_data, virtual_fs[viewer_file_id].content, 13.0f, 0xD0D0D0);
+    }
+}
+
+// ==============================================================================
 // УНІВЕРСАЛЬНИЙ WINDOW MANAGER (ДВИГУН)
 // ==============================================================================
-
 void wm_init(void) {
     for(int i=0; i<MAX_WINDOWS; i++) windows[i].is_open = false;
 
     // Реєструємо Термінал (Індекс 0)
-    windows[0].is_open = true;
+    windows[0].is_open = false;
     windows[0].x = 72; windows[0].y = 52; windows[0].width = 540; windows[0].height = 360;
     custom_strcpy(windows[0].title, "Terminal");
     windows[0].draw_content = app_term_draw;
@@ -182,14 +217,22 @@ void wm_init(void) {
     windows[0].on_click = NULL;
 
     // Реєструємо Провідник (Індекс 1)
-    windows[1].is_open = true;
+    windows[1].is_open = false;
     windows[1].x = 300; windows[1].y = 200; windows[1].width = 600; windows[1].height = 400;
     custom_strcpy(windows[1].title, "Files");
     windows[1].draw_content = app_fm_draw;
     windows[1].on_keypress = NULL;
     windows[1].on_click = app_fm_click;
+    
+    // Реєструємо Переглядач тексту (Індекс 2)
+    windows[2].is_open = false;
+    windows[2].x = 400; windows[2].y = 150; windows[2].width = 450; windows[2].height = 300;
+    custom_strcpy(windows[2].title, "Text Viewer");
+    windows[2].draw_content = app_viewer_draw;
+    windows[2].on_keypress = NULL;
+    windows[2].on_click = NULL;
 
-    focused_window = 1; // Провідник активний при старті
+    focused_window = -1; // Робочий стіл порожній при старті
 }
 
 void wm_draw_windows(void) {
@@ -258,7 +301,9 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
 
         // Клік по кнопці "Х" (Закрити)
         if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H && mx >= wx + ww - 34 && mx <= wx + ww) {
-            windows[win_hit].is_open = false; focused_window = -1; return;
+            windows[win_hit].is_open = false; 
+            focused_window = -1; 
+            return;
         }
         // Клік по заголовку (Почати перетягування)
         if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H) {
@@ -269,5 +314,8 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
         if (windows[win_hit].on_click) {
             windows[win_hit].on_click(mx, my, j_r);
         }
+    } else {
+        // Якщо клікнули повз усі вікна (по робочому столу)
+        if (j_c) focused_window = -1;
     }
 }

@@ -14,6 +14,22 @@ void draw_rect_outline(int x, int y, int w, int h, uint32_t color) {
 void draw_filled_rect(int x, int y, int w, int h, uint32_t color) {
     for (int cy = y; cy < y + h; cy++) for (int cx = x; cx < x + w; cx++) draw_pixel(cx, cy, color);
 }
+void draw_filled_circle(int x, int y, int r, uint32_t color) {
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            if (dx*dx + dy*dy <= r*r) draw_pixel(x + dx, y + dy, color);
+        }
+    }
+}
+
+void draw_rounded_rect(int x, int y, int w, int h, int r, uint32_t color) {
+    draw_filled_rect(x + r, y, w - 2*r, h, color);
+    draw_filled_rect(x, y + r, w, h - 2*r, color);
+    draw_filled_circle(x + r, y + r, r, color);
+    draw_filled_circle(x + w - r, y + r, r, color);
+    draw_filled_circle(x + r, y + h - r, r, color);
+    draw_filled_circle(x + w - r, y + h - r, r, color);
+}
 
 static int rtc_weekday_sun0(uint32_t year, uint8_t month, uint8_t day) {
     const int t[12] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
@@ -56,7 +72,10 @@ static void draw_desktop_dock_blend(uint32_t w, uint32_t h) {
 }
 
 static void draw_dock_icon_placeholder(int x, int y, uint32_t accent) {
-    draw_rounded_rect(x, y, 40, 40, 8, 0x2A2F38); draw_rect_outline(x, y, 40, 40, accent);
+    // Робимо іконки в док-панелі стильнішими
+    draw_filled_rect(x, y, 40, 40, 0x2A2F38); 
+    draw_rect_outline(x, y, 40, 40, accent);
+    draw_filled_rect(x, y+36, 40, 4, accent); // Кольорова лінія знизу
 }
 
 static void draw_status_tray_icons(int right_x, int y0) {
@@ -66,8 +85,10 @@ static void draw_status_tray_icons(int right_x, int y0) {
     draw_filled_rect(x, y0 + 4, 4, 8, 0xCCCCCC); draw_filled_rect(x + 4, y0 + 2, 10, 12, 0x666666);
 }
 
-static void draw_top_bar_kali(uint32_t w) {
+void draw_top_bar_kali(uint32_t w) {
     draw_filled_rect(0, 0, w, DESKTOP_TOP_BAR_H, 0x111111);
+    draw_filled_rect(0, DESKTOP_TOP_BAR_H - 1, w, 1, 0x000000); // Чорна лінія-тінь знизу панелі
+    
     const int bl = 22;
     if (main_font_data) {
         draw_ttf_string(14, bl, main_font_data, "Activities", 15.0f, 0xE8E8E8);
@@ -88,18 +109,22 @@ void draw_desktop_chrome(uint32_t w, uint32_t h) {
 }
 
 void draw_kali_window_frame(int x, int y, int ww, int wh, bool active, const char* title) {
+    // Малюємо рамку вікна з легкою 3D-тінню з правого і нижнього боку
+    draw_filled_rect(x + 2, y + 2, ww, wh, 0x111111); // Тінь вікна
+    
     uint32_t border = active ? 0x00A0C8 : 0x3A3A3A;
-    draw_filled_rect(x, y, ww, wh, 0x1A1A1A); draw_rect_outline(x, y, ww, wh, border);
+    draw_filled_rect(x, y, ww, wh, 0x1A1A1A); // Фон вікна
+    draw_rect_outline(x, y, ww, wh, border);
+    
     uint32_t title_bg = active ? 0x252A30 : 0x1E1E1E;
     draw_filled_rect(x + 1, y + 1, ww - 2, DESKTOP_TITLE_H - 1, title_bg);
-    if (active) draw_filled_rect(x + 1, y + 1, ww - 2, 3, 0x00B4D8);
+    if (active) draw_filled_rect(x + 1, y + 1, ww - 2, 3, 0x00B4D8); // Синя смужка активного вікна
     
-    // ВИПРАВЛЕНО ТУТ: Було 22, стало (y + 22)
     if (main_font_data) draw_ttf_string(x + 10, y + 22, main_font_data, title, 14.0f, 0xE0E0E0);
     
+    // Кнопка закриття (виглядає як у Windows/Linux - червона при наведенні, зараз просто червона)
     int cl_x = x + ww - 34; 
     draw_filled_rect(cl_x, y + 4, 28, 24, 0xC03030);
-    
-    // ВИПРАВЛЕНО ТУТ: Було 20, стало (y + 20)
-    if (main_font_data) draw_ttf_string(cl_x + 8, y + 20, main_font_data, "X", 13.0f, 0xFFFFFF);
+    draw_rect_outline(cl_x, y + 4, 28, 24, 0xA02020); // Контур кнопки
+    if (main_font_data) draw_ttf_string(cl_x + 9, y + 21, main_font_data, "X", 13.0f, 0xFFFFFF);
 }

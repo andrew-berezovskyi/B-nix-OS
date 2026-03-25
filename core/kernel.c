@@ -18,10 +18,14 @@
 #include "desktop.h"
 
 uint8_t* main_font_data = NULL;
-uint8_t* bg_image_data = NULL;
-uint32_t bg_image_size = 0;
-uint8_t* icon_image_data = NULL;
-uint32_t icon_image_size = 0;
+uint8_t* bg_image_data = NULL; uint32_t bg_image_size = 0;
+uint8_t* icon_image_data = NULL; uint32_t icon_image_size = 0;
+
+// Оголошуємо функції з vbe.c, щоб ядро їх бачило
+extern bool cache_background_image(uint8_t* img_data, uint32_t img_size);
+extern bool cache_icon_image(uint8_t* img_data, uint32_t img_size);
+extern bool cache_folder_image(uint8_t* img_data, uint32_t img_size);
+extern bool cache_file_image(uint8_t* img_data, uint32_t img_size);
 
 void* memset(void* dest, int ch, size_t count) {
     unsigned char* ptr = (unsigned char*)dest;
@@ -43,13 +47,11 @@ size_t strlen(const char* str) {
 }
 
 void* __memset_chk(void* dest, int ch, size_t count, size_t destlen) {
-    (void)destlen;
-    return memset(dest, ch, count);
+    (void)destlen; return memset(dest, ch, count);
 }
 
 void* __memcpy_chk(void* dest, const void* src, size_t len, size_t destlen) {
-    (void)destlen;
-    return memcpy(dest, src, len);
+    (void)destlen; return memcpy(dest, src, len);
 }
 
 static uint32_t screen_w = 0;
@@ -84,7 +86,6 @@ void terminal_putchar(char c) { vga_terminal_putchar(c); }
 
 void print(const char* str) {
     for (size_t i = 0; str[i] != '\0'; i++) {
-        // ВИПРАВЛЕНО: Ядро більше не шукає term_win_open
         if (current_state == STATE_DESKTOP) term_gui_feed(str[i]);
         vga_terminal_putchar(str[i]);
     }
@@ -106,51 +107,56 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
             multiboot_module_t* mod = (multiboot_module_t*)mbd->mods_addr;
             uint32_t mod_count = mbd->mods_count;
 
-            if (mod_count >= 1) main_font_data = (uint8_t*)mod[0].mod_start;
-            if (mod_count >= 3) {
-                uint32_t size1 = mod[1].mod_end - mod[1].mod_start;
-                uint32_t size2 = mod[2].mod_end - mod[2].mod_start;
-                if (size1 > size2) {
-                    bg_image_data = (uint8_t*)mod[1].mod_start; bg_image_size = size1;
-                    icon_image_data = (uint8_t*)mod[2].mod_start; icon_image_size = size2;
-                } else {
-                    bg_image_data = (uint8_t*)mod[2].mod_start; bg_image_size = size2;
-                    icon_image_data = (uint8_t*)mod[1].mod_start; icon_image_size = size1;
-                }
+            // Зчитуємо файли по черзі (як вони вказані в grub.cfg)
+            if (mod_count > 0) main_font_data = (uint8_t*)mod[0].mod_start;
+            
+            if (mod_count > 1) { 
+                bg_image_data = (uint8_t*)mod[1].mod_start; 
+                bg_image_size = mod[1].mod_end - mod[1].mod_start; 
+            }
+            if (mod_count > 2) { 
+                icon_image_data = (uint8_t*)mod[2].mod_start; 
+                icon_image_size = mod[2].mod_end - mod[2].mod_start; 
+            }
+            
+            // НОВЕ: Завантажуємо іконки папок і файлів!
+            if (mod_count > 3) {
+                uint8_t* folder_data = (uint8_t*)mod[3].mod_start;
+                uint32_t folder_size = mod[3].mod_end - mod[3].mod_start;
+                cache_folder_image(folder_data, folder_size);
+            }
+            if (mod_count > 4) {
+                uint8_t* file_data = (uint8_t*)mod[4].mod_start;
+                uint32_t file_size = mod[4].mod_end - mod[4].mod_start;
+                cache_file_image(file_data, file_size);
             }
         }
     } 
 
     init_keyboard(); init_mouse(); init_timer(100); init_shell(); init_vfs();
+    
     if (bg_image_data) cache_background_image(bg_image_data, bg_image_size);
     if (icon_image_data) cache_icon_image(icon_image_data, icon_image_size);
 
     desktop_init(screen_w, screen_h);
 
     bool prev_c = false; bool prev_r = false;
-    uint32_t last_tick = timer_ticks; // Запам'ятовуємо поточний час
+    uint32_t last_tick = timer_ticks;
 
     while (1) {
-        // ПРОЦЕСОР ЗАСИНАЄ ТУТ! 
-        // Він чекає, поки прийде переривання (від таймера, миші або клавіатури)
         asm volatile("hlt");
-
-        // Процесор прокинувся! Перевіряємо, чи змінився час (чи пройшла 1/100 секунди)
         if (timer_ticks != last_tick) {
-            last_tick = timer_ticks; // Оновлюємо наш таймер
+            last_tick = timer_ticks;
 
-            // 1. Зчитуємо поточний стан (який у фоні оновили драйвери миші)
             int mx = mouse_x; int my = mouse_y;
             bool left_now = mouse_left_pressed; bool right_now = mouse_right_pressed;
             bool j_c = (left_now && !prev_c); bool j_r = (right_now && !prev_r);
 
-            // 2. Обробляємо клавіатуру
             if (key_ready) {
                 desktop_handle_keypress(last_key_pressed);
                 key_ready = false;
             }
 
-            // 3. Обробляємо і малюємо інтерфейс ТІЛЬКИ 100 разів на секунду
             desktop_process_mouse(mx, my, left_now, right_now, j_c, j_r);
             desktop_draw();
             

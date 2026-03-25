@@ -40,6 +40,8 @@ build_iso: myos.bin
 	cp assets/bg.png $(ISO_DIR)/bg.png 2>/dev/null || true
 	cp assets/icon.png $(ISO_DIR)/icon.png 2>/dev/null || true
 	cp assets/font.ttf $(ISO_DIR)/font.ttf 2>/dev/null || true
+	cp assets/folder.png $(ISO_DIR)/folder.png 2>/dev/null || true
+	cp assets/file.png $(ISO_DIR)/file.png 2>/dev/null || true
 	grub-mkrescue -o b-nix.iso iso
 
 clean:
