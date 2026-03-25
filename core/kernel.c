@@ -84,7 +84,8 @@ void terminal_putchar(char c) { vga_terminal_putchar(c); }
 
 void print(const char* str) {
     for (size_t i = 0; str[i] != '\0'; i++) {
-        if (current_state == STATE_DESKTOP && term_win_open) term_gui_feed(str[i]);
+        // ВИПРАВЛЕНО: Ядро більше не шукає term_win_open
+        if (current_state == STATE_DESKTOP) term_gui_feed(str[i]);
         vga_terminal_putchar(str[i]);
     }
 }
@@ -127,23 +128,36 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     desktop_init(screen_w, screen_h);
 
     bool prev_c = false; bool prev_r = false;
+    uint32_t last_tick = timer_ticks; // Запам'ятовуємо поточний час
+
     while (1) {
-        int mx = mouse_x; int my = mouse_y;
-        bool left_now = mouse_left_pressed; bool right_now = mouse_right_pressed;
-        bool j_c = (left_now && !prev_c); bool j_r = (right_now && !prev_r);
-
-        if (key_ready) {
-            desktop_handle_keypress(last_key_pressed);
-            key_ready = false;
-        }
-
-        desktop_process_mouse(mx, my, left_now, right_now, j_c, j_r);
-        desktop_draw();
-        
-        draw_cursor(mx, my); 
-        swap_buffers();
-        
-        prev_c = left_now; prev_r = right_now;
+        // ПРОЦЕСОР ЗАСИНАЄ ТУТ! 
+        // Він чекає, поки прийде переривання (від таймера, миші або клавіатури)
         asm volatile("hlt");
+
+        // Процесор прокинувся! Перевіряємо, чи змінився час (чи пройшла 1/100 секунди)
+        if (timer_ticks != last_tick) {
+            last_tick = timer_ticks; // Оновлюємо наш таймер
+
+            // 1. Зчитуємо поточний стан (який у фоні оновили драйвери миші)
+            int mx = mouse_x; int my = mouse_y;
+            bool left_now = mouse_left_pressed; bool right_now = mouse_right_pressed;
+            bool j_c = (left_now && !prev_c); bool j_r = (right_now && !prev_r);
+
+            // 2. Обробляємо клавіатуру
+            if (key_ready) {
+                desktop_handle_keypress(last_key_pressed);
+                key_ready = false;
+            }
+
+            // 3. Обробляємо і малюємо інтерфейс ТІЛЬКИ 100 разів на секунду
+            desktop_process_mouse(mx, my, left_now, right_now, j_c, j_r);
+            desktop_draw();
+            
+            draw_cursor(mx, my); 
+            swap_buffers();
+            
+            prev_c = left_now; prev_r = right_now;
+        }
     }
 }
