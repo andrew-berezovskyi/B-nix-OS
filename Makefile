@@ -1,35 +1,49 @@
-OBJ = boot.o gdt.o idt.o timer.o rtc.o pmm.o vmm.o kheap.o vbe.o keyboard.o mouse.o fs.o shell.o kernel.o
+CC = gcc
+AS = nasm
+LD = ld
 
-all: clean build_iso run
+CFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -Iinclude
+LDFLAGS = -m elf_i386 -T linker.ld
 
-build_kernel:
-	nasm -f elf32 boot.asm -o boot.o
-	gcc -m32 -ffreestanding -O2 -c gdt.c -o gdt.o
-	gcc -m32 -ffreestanding -O2 -c idt.c -o idt.o
-	gcc -m32 -ffreestanding -O2 -c timer.c -o timer.o
-	gcc -m32 -ffreestanding -O2 -c rtc.c -o rtc.o
-	gcc -m32 -ffreestanding -O2 -c pmm.c -o pmm.o
-	gcc -m32 -ffreestanding -O2 -c vmm.c -o vmm.o
-	gcc -m32 -ffreestanding -O2 -c kheap.c -o kheap.o
-	gcc -m32 -ffreestanding -O2 -c vbe.c -o vbe.o
-	gcc -m32 -ffreestanding -O2 -c keyboard.c -o keyboard.o
-	gcc -m32 -ffreestanding -O2 -c mouse.c -o mouse.o
-	gcc -m32 -ffreestanding -O2 -c fs.c -o fs.o
-	gcc -m32 -ffreestanding -O2 -c shell.c -o shell.o
-	gcc -m32 -ffreestanding -O2 -c kernel.c -o kernel.o
-	ld -m elf_i386 -T linker.ld -o myos.bin $(OBJ)
+BUILD_DIR = build
+ISO_DIR = iso/boot
 
-build_iso: build_kernel
-	mkdir -p iso/boot/grub
-	cp myos.bin iso/boot/myos.bin
-	cp font.ttf iso/boot/font.ttf
-	cp bg.png iso/boot/bg.png
-	cp icon.png iso/boot/icon.png
-	cp grub.cfg iso/boot/grub/grub.cfg
+# Списки файлів
+C_SOURCES = core/kernel.c core/gdt.c core/idt.c \
+            drivers/vbe.c drivers/keyboard.c drivers/mouse.c drivers/rtc.c drivers/timer.c \
+            mm/pmm.c mm/vmm.c mm/kheap.c \
+            fs/fs.c fs/shell.c
+
+# Перетворюємо імена .c файлів на .o файли в папці build
+OBJS = $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(BUILD_DIR)/core/boot.o
+
+all: build_iso
+
+# Правило для компіляції асемблера
+$(BUILD_DIR)/core/boot.o: core/boot.asm
+	@mkdir -p $(dir $@)
+	$(AS) -f elf32 $< -o $@
+
+# Правило для компіляції C-файлів
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Збираємо ядро
+myos.bin: $(OBJS) linker.ld
+	$(LD) $(LDFLAGS) -o $@ $(OBJS)
+
+# Збираємо ISO образ
+build_iso: myos.bin
+	@mkdir -p $(ISO_DIR)
+	cp myos.bin $(ISO_DIR)/myos.bin
+	cp assets/bg.png $(ISO_DIR)/bg.png 2>/dev/null || true
+	cp assets/icon.png $(ISO_DIR)/icon.png 2>/dev/null || true
+	cp assets/font.ttf $(ISO_DIR)/font.ttf 2>/dev/null || true
 	grub-mkrescue -o b-nix.iso iso
 
-run:
-	qemu-system-i386 -m 256M -cdrom b-nix.iso -vga std
-
 clean:
-	rm -rf *.o myos.bin b-nix.iso iso/boot/myos.bin
+	rm -rf $(BUILD_DIR) myos.bin b-nix.iso
+
+run: build_iso
+	qemu-system-i386 -m 256M -cdrom b-nix.iso -vga std
