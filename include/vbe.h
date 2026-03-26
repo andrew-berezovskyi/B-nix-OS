@@ -28,6 +28,11 @@ uint32_t get_pixel(int x, int y);
 void swap_buffers(void);
 void clear_screen(uint32_t color);
 
+// 🔥 НОВЕ: Керування цілями малювання
+void set_render_target(uint32_t* target, int w, int h);
+void reset_render_target(void);
+void draw_buffer_to_screen(uint32_t* buffer, int bw, int bh, int x, int y);
+
 void draw_filled_rect(int x, int y, int w, int h, uint32_t color);
 void draw_rect_outline(int x, int y, int w, int h, uint32_t color);
 void draw_filled_circle(int x, int y, int r, uint32_t color);

@@ -76,6 +76,20 @@ uint32_t timer_handler_main(uint32_t current_esp) {
     return current_esp;
 }
 
+
+void exit_current_task(void) {
+    asm volatile("cli");
+    // Не дозволяємо вбити головну задачу ядра (GUI) - індекс 0
+    if (current_task > 0 && current_task < MAX_TASKS) {
+        tasks[current_task].state = TASK_FREE; // Звільняємо місце для нових програм
+    }
+    asm volatile("sti");
+    
+    // Зависаємо тут на кілька мікросекунд, поки Планувальник 
+    // не перемкне нас на іншу задачу назавжди.
+    while(1) { asm volatile("hlt"); } 
+}
+
 void init_timer(uint32_t frequency) {
     current_frequency = frequency;
     uint32_t divisor = 1193180 / frequency;

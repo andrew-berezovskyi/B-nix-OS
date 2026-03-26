@@ -21,13 +21,16 @@ uint8_t* main_font_data = NULL;
 uint8_t* bg_image_data = NULL; uint32_t bg_image_size = 0;
 uint8_t* icon_image_data = NULL; uint32_t icon_image_size = 0;
 
+// Змінні для нашої програми з GRUB
+uint8_t* calc_app_data = NULL; 
+uint32_t calc_app_size = 0;
+
 extern bool cache_background_image(uint8_t* img_data, uint32_t img_size);
 extern bool cache_icon_image(uint8_t* img_data, uint32_t img_size);
 extern bool cache_folder_image(uint8_t* img_data, uint32_t img_size);
 extern bool cache_file_image(uint8_t* img_data, uint32_t img_size);
 extern void draw_filled_rect(int x, int y, int w, int h, uint32_t color);
 
-// Беремо змінну is_dragging з wm.c, щоб знати, чи тягнемо ми вікно
 extern bool is_dragging;
 
 // --- СТАНДАРТНІ ФУНКЦІЇ ---
@@ -77,7 +80,7 @@ void print(const char* str) {
 }
 
 // ==============================================================================
-// 🔥 СИСТЕМА НЕЗАЛЕЖНОГО КУРСОРУ 
+// СИСТЕМА НЕЗАЛЕЖНОГО КУРСОРУ 
 // ==============================================================================
 static uint32_t cursor_bg_save[32 * 32];
 static int saved_mx = -1, saved_my = -1;
@@ -103,11 +106,10 @@ static void erase_cursor(void) {
     }
 }
 
-// Глобальна змінна для зв'язку між фоновою задачею та GUI
-volatile int blinker_color = 0; // 0=Вимкнено, 1=Червоний, 2=Зелений
+volatile int blinker_color = 0; 
 
 // ==============================================================================
-// ЗАВДАННЯ 1: GUI (Графічний інтерфейс)
+// ЗАВДАННЯ 1: GUI
 // ==============================================================================
 void task_gui_main(void) {
     bool prev_c = false, prev_r = false;
@@ -116,7 +118,7 @@ void task_gui_main(void) {
     bool is_first_run = true; 
 
     while (1) {
-        asm volatile("hlt"); // Спимо до переривання
+        asm volatile("hlt");
 
         int mx = mouse_x; int my = mouse_y;
         bool left_now = mouse_left_pressed; bool right_now = mouse_right_pressed;
@@ -126,7 +128,6 @@ void task_gui_main(void) {
         bool j_c = (left_now && !prev_c); bool j_r = (right_now && !prev_r);
         bool has_key = key_ready;
 
-        // 1. Оновлюємо логіку вікон (координати, кліки), якщо щось сталося
         if (mouse_moved || click_changed || has_key) {
             desktop_process_mouse(mx, my, left_now, right_now, j_c, j_r);
         }
@@ -135,15 +136,7 @@ void task_gui_main(void) {
             key_ready = false; 
         }
 
-        // 2. ЖОРСТКИЙ FPS CAP: Чи пройшов хоча б 1 тік таймера?
         bool time_passed = (timer_ticks != last_full_draw);
-        
-        // Ми перемальовуємо важкі вікна ТІЛЬКИ ЯКЩО:
-        // - Це перший запуск
-        // - Клікнули мишею
-        // - Натиснули клавіатуру
-        // - Ми тягнемо вікно, миша рухається, І ПРОЙШОВ ТІК ТАЙМЕРА (максимум 50 FPS)
-        // - Пройшло 0.5 секунди (оновлення годинника/індикатора)
         bool dragging_movement = (is_dragging && mouse_moved && time_passed);
         bool full_redraw = is_first_run || click_changed || has_key || dragging_movement || (timer_ticks - last_full_draw > 25);
 
@@ -152,18 +145,16 @@ void task_gui_main(void) {
             last_full_draw = timer_ticks;
 
             saved_mx = -1; 
-            desktop_draw(); // Малюємо вікна і фон
+            desktop_draw(); 
             
-            // МАГІЯ: Тепер GUI малює індикатор, гарантуючи, що він буде ЗВЕРХУ!
             if (blinker_color == 1) draw_filled_rect(1250, 5, 20, 20, 0xFF0000);
             else if (blinker_color == 2) draw_filled_rect(1250, 5, 20, 20, 0x00FF00);
             
             save_cursor_bg(mx, my);
             draw_cursor(mx, my);
-            swap_buffers(); // Відправляємо готовий ідеальний кадр на екран
+            swap_buffers(); 
 
         } else if (mouse_moved) {
-            // Легке малювання (Тільки курсор миші - без FPS Cap)
             erase_cursor();         
             save_cursor_bg(mx, my); 
             draw_cursor(mx, my);    
@@ -176,19 +167,14 @@ void task_gui_main(void) {
 }
 
 // ==============================================================================
-// ЗАВДАННЯ 2: ФОНОВИЙ ІНДИКАТОР (Перевірка багатозадачності)
+// ЗАВДАННЯ 2: ФОНОВИЙ ІНДИКАТОР 
 // ==============================================================================
 void task_blinker_main(void) {
     bool is_red = false;
-    
     while (1) {
-        // Фонова задача більше НЕ малює. Вона просто змінює стан!
         if (is_red) blinker_color = 1;
         else blinker_color = 2;
-        
         is_red = !is_red;
-        
-        // Спокійно засинаємо рівно на 1 секунду.
         sleep(1); 
     }
 }
@@ -214,6 +200,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
             if (mbd->mods_count > 2) { icon_image_data = (uint8_t*)mod[2].mod_start; icon_image_size = mod[2].mod_end - mod[2].mod_start; }
             if (mbd->mods_count > 3) cache_folder_image((uint8_t*)mod[3].mod_start, mod[3].mod_end - mod[3].mod_start);
             if (mbd->mods_count > 4) cache_file_image((uint8_t*)mod[4].mod_start, mod[4].mod_end - mod[4].mod_start);
+            if (mbd->mods_count > 5) { calc_app_data = (uint8_t*)mod[5].mod_start; calc_app_size = mod[5].mod_end - mod[5].mod_start; }
         }
     } 
 
@@ -222,6 +209,17 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     init_timer(50); 
     init_shell(); 
     init_fs();
+    
+    // 🔥 ОНОВЛЕНО: Тепер ми завжди перезаписуємо calc.bin, якщо він є у модулях GRUB
+    if (calc_app_data && calc_app_size > 0) {
+        fs_unlink("calc.bin"); // Спочатку видаляємо стару версію з жорсткого диска
+        int calc_fd = fs_open("calc.bin", O_CREAT | O_WRONLY); // Створюємо файл наново
+        if (calc_fd != -1) {
+            fs_write(calc_fd, calc_app_data, calc_app_size);
+            fs_close(calc_fd);
+        }
+    }
+    // ==========================================================
     
     if (bg_image_data) cache_background_image(bg_image_data, bg_image_size);
     if (icon_image_data) cache_icon_image(icon_image_data, icon_image_size);

@@ -37,5 +37,6 @@ typedef struct {
 void init_multitasking(void);
 int create_task(void (*entry_point)(void));
 void schedule(context_t* current_context);
+void exit_current_task(void); // Дозволяє програмі здійснити "суїцид"
 
 #endif

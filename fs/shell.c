@@ -1,6 +1,8 @@
 #include "shell.h"
 #include "fs.h"
 #include "sys_api.h"
+#include "kheap.h"   
+#include "timer.h"   
 #include <stdint.h>
 
 extern void print(const char* str);
@@ -15,7 +17,10 @@ extern uint32_t pmm_get_max_blocks(void);
 char command_buffer[SHELL_BUFFER_SIZE];
 int buffer_index = 0;
 
-// Допоміжні функції
+volatile bool app_waiting_for_input = false;
+char* app_input_buffer = 0;
+bool suppress_prompt = false; // 🔥 НОВЕ: Контролюємо, чи друкувати B-nix>
+
 int strcmp(const char* s1, const char* s2) {
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
@@ -58,22 +63,23 @@ void print_prompt() {
     print("B-nix> "); 
 }
 
-// Головний обробник команд
 void execute_command() {
     command_buffer[buffer_index] = '\0';
+    suppress_prompt = false; // Скидаємо прапорець
 
     if (buffer_index == 0) { } 
     else if (strcmp(command_buffer, "help") == 0) {
         print("Available commands:\n");
-        print("  ls             - List files and directories\n");   
-        print("  cat <file>     - Print file content\n");           
-        print("  rm <file>      - Delete a file\n");                
+        print("  ls            - List files and directories\n");   
+        print("  cat <file>    - Print file content\n");          
+        print("  rm <file>     - Delete a file\n");                
         print("  echo <txt> > <file> - Write text to file\n");      
-        print("  clear          - Clear the screen\n");
-        print("  info           - Show system information\n");
-        print("  uptime         - Show system uptime\n");
-        print("  meminfo        - Show physical memory status\n");
-        print("  sleep <sec>    - Pause system for X seconds\n");
+        print("  clear         - Clear the screen\n");
+        print("  info          - Show system information\n");
+        print("  uptime        - Show system uptime\n");
+        print("  meminfo       - Show physical memory status\n");
+        print("  sleep <sec>   - Pause system for X seconds\n");
+        print("  run <file>    - EXECUTE A BINARY PROGRAM!\n"); 
     } 
     else if (strcmp(command_buffer, "info") == 0) {
         print("B-nix OS v0.1\n");
@@ -112,25 +118,44 @@ void execute_command() {
             }
         }
     }
-    // ========================================================
-    // ОНОВЛЕНИЙ 'rm': Тепер з відрізанням зайвих пробілів!
-    // ========================================================
-    else if (strncmp(command_buffer, "rm ", 3) == 0) {
-        char* filename = command_buffer + 3; // Змінили const char на char
+    else if (strncmp(command_buffer, "run ", 4) == 0) {
+        char* filename = command_buffer + 4;
         while (*filename == ' ') filename++;
         
-        // Відрізаємо пробіли в кінці імені
-        int len = 0; 
-        while (filename[len]) len++;
+        int len = 0; while (filename[len]) len++;
+        while (len > 0 && filename[len-1] == ' ') { filename[len-1] = '\0'; len--; }
+        
+        if (*filename == '\0') { print("Usage: run <filename.bin>\n"); } 
+        else {
+            int fd = sys_open(filename, O_RDONLY);
+            if (fd != -1) {
+                void* app_memory = (void*)0x2000000; 
+                int bytes_read = sys_read(fd, app_memory, 32768); 
+                if (bytes_read > 0) {
+                    int task_id = create_task((void (*)(void))((uint32_t)app_memory));
+                    if (task_id != -1) {
+                        suppress_prompt = true; // 🔥 Не друкуємо B-nix>!
+                    } else { print("Error: Could not create process.\n"); }
+                } else {
+                    print("Error: File is empty or could not be read.\n");
+                }
+                sys_close(fd);
+            } else {
+                print("run: "); print(filename); print(": No such file\n");
+            }
+        }
+    }
+    else if (strncmp(command_buffer, "rm ", 3) == 0) {
+        char* filename = command_buffer + 3;
+        while (*filename == ' ') filename++;
+        
+        int len = 0; while (filename[len]) len++;
         while (len > 0 && filename[len-1] == ' ') { filename[len-1] = '\0'; len--; }
         
         if (*filename == '\0') { print("Usage: rm <filename>\n"); } 
         else {
-            if (sys_unlink(filename) == 0) {
-                print("File deleted.\n");
-            } else {
-                print("rm: cannot remove '"); print(filename); print("'\n");
-            }
+            if (sys_unlink(filename) == 0) { print("File deleted.\n"); } 
+            else { print("rm: cannot remove '"); print(filename); print("'\n"); }
         }
     }
     else if (strncmp(command_buffer, "echo ", 5) == 0) {
@@ -151,9 +176,7 @@ void execute_command() {
                 sys_write(fd, text, len); sys_close(fd);
                 print("Saved to "); print(file); print("\n");
             } else { print("Error opening file.\n"); }
-        } else {
-            print(cmd); print("\n");
-        }
+        } else { print(cmd); print("\n"); }
     }
     else if (strcmp(command_buffer, "uptime") == 0) {
         uint32_t uptime = get_uptime_seconds(); char uptime_str[16];
@@ -174,26 +197,59 @@ void execute_command() {
     }
     else if (strncmp(command_buffer, "sleep ", 6) == 0) {
         int secs = atoi(command_buffer + 6);
-        if (secs > 0) {
-            print("Sleeping...\n"); sleep(secs);
-        }
+        if (secs > 0) { print("Sleeping...\n"); sleep(secs); }
     }
     else { print("Unknown command. Type 'help'\n"); }
     
     buffer_index = 0;
 }
 
+void shell_readline(char* out_buf) {
+    app_input_buffer = out_buf;
+    buffer_index = 0; 
+    app_waiting_for_input = true;
+    
+    asm volatile("sti"); 
+    
+    while (app_waiting_for_input) { asm volatile("hlt"); }
+}
+
 void shell_handle_keypress(char c) {
+    if (app_waiting_for_input) {
+        if (c == '\n') {
+            print("\n");
+            command_buffer[buffer_index] = '\0';
+            
+            char* dest = app_input_buffer;
+            char* src = command_buffer;
+            while(*src) *dest++ = *src++;
+            *dest = '\0';
+            
+            buffer_index = 0;
+            app_waiting_for_input = false; 
+        }
+        else if (c == '\b') {
+            if (buffer_index > 0) { buffer_index--; terminal_putchar('\b'); }
+        } 
+        else {
+            if (buffer_index < SHELL_BUFFER_SIZE - 1) { 
+                command_buffer[buffer_index++] = c; 
+                terminal_putchar(c); 
+            }
+        }
+        return; 
+    }
+
     if (c == '\n') { 
         print("\n"); 
         execute_command(); 
-        print_prompt(); 
+        // 🔥 Друкуємо запрошення ТІЛЬКИ якщо ми не запустили програму
+        if (!suppress_prompt) {
+            print_prompt(); 
+        }
     } 
     else if (c == '\b') {
-        if (buffer_index > 0) { 
-            buffer_index--; 
-            terminal_putchar('\b'); 
-        }
+        if (buffer_index > 0) { buffer_index--; terminal_putchar('\b'); }
     } 
     else {
         if (buffer_index < SHELL_BUFFER_SIZE - 1) { 
