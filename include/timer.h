@@ -19,24 +19,31 @@ typedef struct {
     uint32_t eflags;                                 
 } context_t;
 
-// НОВЕ: Статуси задач (справжній сон)
-#define TASK_FREE     0
-#define TASK_RUNNING  1
-#define TASK_SLEEPING 2
+// Статуси задач
+#define TASK_FREE         0
+#define TASK_RUNNING      1
+#define TASK_SLEEPING     2
+#define TASK_WAITING_KBD  3  // Програма чекає вводу з клавіатури
 
 typedef struct {
     uint32_t id;          
     context_t context;    
     uint8_t* stack;       
-    int state;           // TASK_FREE, TASK_RUNNING, TASK_SLEEPING
-    uint32_t wake_time;  // Тік таймера, коли програму треба розбудити
+    int state;           
+    uint32_t wake_time;  
+    uint32_t* page_directory; // 🔥 НОВЕ: Паспорт віртуальної пам'яті процесу
 } task_t;
 
 #define MAX_TASKS 4
 
+extern int current_task;
+extern task_t tasks[MAX_TASKS];
+
 void init_multitasking(void);
-int create_task(void (*entry_point)(void));
+// 🔥 ЗМІНЕНО: Тепер ми передаємо каталог сторінок при створенні задачі
+int create_task(void (*entry_point)(void), uint32_t* pagedir);
 void schedule(context_t* current_context);
-void exit_current_task(void); // Дозволяє програмі здійснити "суїцид"
+void exit_current_task(void); 
+void wake_up_task(int task_id);
 
 #endif

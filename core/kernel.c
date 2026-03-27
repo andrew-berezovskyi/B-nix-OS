@@ -227,8 +227,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     desktop_init(screen_w, screen_h);
 
     init_multitasking();
-    create_task(task_gui_main); 
-    create_task(task_blinker_main); 
+    create_task(task_gui_main, NULL);      // 🔥 Додали NULL
+    create_task(task_blinker_main, NULL);
 
     while (1) {
         asm volatile("hlt");

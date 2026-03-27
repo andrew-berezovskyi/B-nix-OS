@@ -1,5 +1,6 @@
 #include "timer.h"
 #include "io.h"
+#include "vmm.h" // 🔥 НОВЕ: Для перемикання пам'яті
 
 volatile uint32_t timer_ticks = 0;
 uint32_t current_frequency = 0;
@@ -16,11 +17,14 @@ void init_multitasking(void) {
         tasks[i].id = i;
     }
     tasks[0].state = TASK_RUNNING;
+    // Головна задача (ядро/GUI) використовує глобальний каталог ядра
+    tasks[0].page_directory = kernel_directory; 
     current_task = 0;
     multitasking_enabled = true;
 }
 
-int create_task(void (*entry_point)(void)) {
+// 🔥 ОНОВЛЕНО: Приймаємо page_directory
+int create_task(void (*entry_point)(void), uint32_t* pagedir) {
     asm volatile("cli");
     int new_id = -1;
     for (int i = 1; i < MAX_TASKS; i++) {
@@ -44,6 +48,8 @@ int create_task(void (*entry_point)(void)) {
     *(--stack) = 0; // EDI
 
     tasks[new_id].context.esp = (uint32_t)stack;
+    // Прив'язуємо простір до задачі (якщо NULL, то це потік ядра)
+    tasks[new_id].page_directory = pagedir ? pagedir : kernel_directory;
     tasks[new_id].state = TASK_RUNNING;
     
     asm volatile("sti");
@@ -54,39 +60,45 @@ uint32_t timer_handler_main(uint32_t current_esp) {
     timer_ticks++;
 
     if (multitasking_enabled) {
-        // 1. Будимо програми, якщо їхній час прийшов
         for (int i = 0; i < MAX_TASKS; i++) {
             if (tasks[i].state == TASK_SLEEPING && timer_ticks >= tasks[i].wake_time) {
                 tasks[i].state = TASK_RUNNING;
             }
         }
 
-        // 2. Перемикаємо контекст (тільки на активні програми)
         tasks[current_task].context.esp = current_esp;
         int next_task = current_task;
+        
         do {
             next_task = (next_task + 1) % MAX_TASKS;
         } while (tasks[next_task].state != TASK_RUNNING);
 
         current_task = next_task;
         current_esp = tasks[current_task].context.esp;
+
+        // 🔥 МАГІЯ ЛІНУКСА: Перемикаємо Віртуальну Пам'ять (CR3) для нової задачі!
+        vmm_switch_directory(tasks[current_task].page_directory);
     }
 
     outb(0x20, 0x20);
     return current_esp;
 }
 
+void wake_up_task(int task_id) {
+    if (task_id >= 0 && task_id < MAX_TASKS) {
+        if (tasks[task_id].state == TASK_WAITING_KBD) {
+            tasks[task_id].state = TASK_RUNNING;
+        }
+    }
+}
 
 void exit_current_task(void) {
     asm volatile("cli");
-    // Не дозволяємо вбити головну задачу ядра (GUI) - індекс 0
     if (current_task > 0 && current_task < MAX_TASKS) {
-        tasks[current_task].state = TASK_FREE; // Звільняємо місце для нових програм
+        tasks[current_task].state = TASK_FREE; 
+        // В ідеалі тут треба ще робити kfree() для page_directory, але поки що залишимо так
     }
     asm volatile("sti");
-    
-    // Зависаємо тут на кілька мікросекунд, поки Планувальник 
-    // не перемкне нас на іншу задачу назавжди.
     while(1) { asm volatile("hlt"); } 
 }
 
@@ -102,10 +114,8 @@ uint32_t get_uptime_seconds(void) { return timer_ticks / current_frequency; }
 
 void sleep(uint32_t seconds) {
     if (multitasking_enabled && current_task != -1) {
-        // НОВЕ: Справжній багатозадачний сон
         tasks[current_task].wake_time = timer_ticks + (seconds * current_frequency);
         tasks[current_task].state = TASK_SLEEPING;
-        // Програма зупиняється ТУТ, поки планувальник не змінить її статус на RUNNING
         while (tasks[current_task].state == TASK_SLEEPING) {
             asm volatile("hlt");
         }
