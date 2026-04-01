@@ -1,6 +1,6 @@
 #include "timer.h"
 #include "io.h"
-#include "vmm.h" // 🔥 НОВЕ: Для перемикання пам'яті
+#include "vmm.h"
 
 volatile uint32_t timer_ticks = 0;
 uint32_t current_frequency = 0;
@@ -9,7 +9,7 @@ task_t tasks[MAX_TASKS];
 int current_task = -1;
 bool multitasking_enabled = false;
 
-static uint8_t task_stacks[MAX_TASKS][32768]; 
+static uint8_t task_stacks[MAX_TASKS][32768];
 
 void init_multitasking(void) {
     for (int i = 0; i < MAX_TASKS; i++) {
@@ -17,13 +17,11 @@ void init_multitasking(void) {
         tasks[i].id = i;
     }
     tasks[0].state = TASK_RUNNING;
-    // Головна задача (ядро/GUI) використовує глобальний каталог ядра
-    tasks[0].page_directory = kernel_directory; 
+    tasks[0].page_directory = kernel_directory;
     current_task = 0;
     multitasking_enabled = true;
 }
 
-// 🔥 ОНОВЛЕНО: Приймаємо page_directory
 int create_task(void (*entry_point)(void), uint32_t* pagedir) {
     asm volatile("cli");
     int new_id = -1;
@@ -34,21 +32,20 @@ int create_task(void (*entry_point)(void), uint32_t* pagedir) {
 
     uint32_t* stack = (uint32_t*)(task_stacks[new_id] + 32768);
 
-    *(--stack) = 0x202;        // EFLAGS
-    *(--stack) = 0x08;         // CS
-    *(--stack) = (uint32_t)entry_point; // EIP
+    --stack; *stack = 0x202;                 // EFLAGS
+    --stack; *stack = 0x08;                  // CS
+    --stack; *stack = (uint32_t)entry_point; // EIP
 
-    *(--stack) = 0; // EAX
-    *(--stack) = 0; // ECX
-    *(--stack) = 0; // EDX
-    *(--stack) = 0; // EBX
-    *(--stack) = (uint32_t)stack; // ESP
-    *(--stack) = 0; // EBP
-    *(--stack) = 0; // ESI
-    *(--stack) = 0; // EDI
+    --stack; *stack = 0; // EAX
+    --stack; *stack = 0; // ECX
+    --stack; *stack = 0; // EDX
+    --stack; *stack = 0; // EBX
+    --stack; *stack = 0; // ESP slot for popad (ignored by CPU)
+    --stack; *stack = 0; // EBP
+    --stack; *stack = 0; // ESI
+    --stack; *stack = 0; // EDI
 
     tasks[new_id].context.esp = (uint32_t)stack;
-    // Прив'язуємо простір до задачі (якщо NULL, то це потік ядра)
     tasks[new_id].page_directory = pagedir ? pagedir : kernel_directory;
     tasks[new_id].state = TASK_RUNNING;
     
@@ -59,7 +56,7 @@ int create_task(void (*entry_point)(void), uint32_t* pagedir) {
 uint32_t timer_handler_main(uint32_t current_esp) {
     timer_ticks++;
 
-    if (multitasking_enabled) {
+    if (multitasking_enabled && current_task >= 0 && current_task < MAX_TASKS) {
         for (int i = 0; i < MAX_TASKS; i++) {
             if (tasks[i].state == TASK_SLEEPING && timer_ticks >= tasks[i].wake_time) {
                 tasks[i].state = TASK_RUNNING;
@@ -67,17 +64,21 @@ uint32_t timer_handler_main(uint32_t current_esp) {
         }
 
         tasks[current_task].context.esp = current_esp;
-        int next_task = current_task;
-        
-        do {
-            next_task = (next_task + 1) % MAX_TASKS;
-        } while (tasks[next_task].state != TASK_RUNNING);
+        int next_task = -1;
 
-        current_task = next_task;
-        current_esp = tasks[current_task].context.esp;
+        for (int probe = 1; probe <= MAX_TASKS; probe++) {
+            int candidate = (current_task + probe) % MAX_TASKS;
+            if (tasks[candidate].state == TASK_RUNNING) {
+                next_task = candidate;
+                break;
+            }
+        }
 
-        // 🔥 МАГІЯ ЛІНУКСА: Перемикаємо Віртуальну Пам'ять (CR3) для нової задачі!
-        vmm_switch_directory(tasks[current_task].page_directory);
+        if (next_task != -1) {
+            current_task = next_task;
+            vmm_switch_directory(tasks[current_task].page_directory);
+            current_esp = tasks[current_task].context.esp;
+        }
     }
 
     outb(0x20, 0x20);

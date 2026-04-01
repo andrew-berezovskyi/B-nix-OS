@@ -186,6 +186,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     init_gdt(); 
     init_idt();
     init_kheap(0x1000000, 16 * 1024 * 1024);
+    init_vmm();
 
     if (magic == 0x2BADB002 && (mbd->flags & (1 << 12))) {
         uint32_t fb_addr = (uint32_t)(mbd->framebuffer_addr & 0xFFFFFFFF); 

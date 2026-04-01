@@ -37,7 +37,7 @@ int strncmp(const char* s1, const char* s2, int n) {
 void print_prompt() { print("B-nix> "); }
 
 // ========================================================
-// 🔥 СПРАВЖНІЙ ELF LOADER (З ВИРІВНЮВАННЯМ!)
+// ELF32 loader with page-offset aware PT_LOAD mapping
 // ========================================================
 static int load_elf_and_run(const char* filename) {
     int fd = sys_open(filename, O_RDONLY);
@@ -47,75 +47,173 @@ static int load_elf_and_run(const char* filename) {
     }
 
     elf32_ehdr_t ehdr;
-    if (sys_read(fd, &ehdr, sizeof(elf32_ehdr_t)) != sizeof(elf32_ehdr_t)) {
+    if (sys_read(fd, &ehdr, sizeof(elf32_ehdr_t)) != (int)sizeof(elf32_ehdr_t)) {
         print("ELF Error: File too small.\n");
         sys_close(fd);
         return -1;
     }
 
-    if (ehdr.e_ident[0] != ELFMAG0 || ehdr.e_ident[1] != ELFMAG1 || 
+    if (ehdr.e_ident[0] != ELFMAG0 || ehdr.e_ident[1] != ELFMAG1 ||
         ehdr.e_ident[2] != ELFMAG2 || ehdr.e_ident[3] != ELFMAG3) {
         print("ELF Error: Not an ELF file.\n");
         sys_close(fd);
         return -1;
     }
 
-    uint32_t* pagedir = vmm_create_address_space();
-    bool loaded_anything = false;
-
-    int skip_to_phdr = ehdr.e_phoff - sizeof(elf32_ehdr_t);
-    char tmp[64];
-    while (skip_to_phdr > 0) {
-        int r = skip_to_phdr > 64 ? 64 : skip_to_phdr;
-        sys_read(fd, tmp, r);
-        skip_to_phdr -= r;
+    if (ehdr.e_phnum == 0 || ehdr.e_phentsize < sizeof(elf32_phdr_t)) {
+        print("ELF Error: Invalid program headers.\n");
+        sys_close(fd);
+        return -1;
     }
 
-    for (int i = 0; i < ehdr.e_phnum; i++) {
-        elf32_phdr_t phdr;
-        if (sys_read(fd, &phdr, sizeof(elf32_phdr_t)) != sizeof(elf32_phdr_t)) break;
+    uint32_t* page_directory = vmm_create_address_space();
+    if (page_directory == (uint32_t*)0) {
+        print("ELF Error: No memory for page directory.\n");
+        sys_close(fd);
+        return -1;
+    }
 
-        if (phdr.p_type == PT_LOAD && phdr.p_memsz > 0) {
-            loaded_anything = true;
-            
-            uint32_t offset_in_page = phdr.p_vaddr & 0xFFF;
-            uint32_t pages_needed = (phdr.p_memsz + offset_in_page + 4095) / 4096;
-            
-            uint32_t raw_alloc = (uint32_t)kmalloc(pages_needed * 4096 + 4096);
-            uint32_t phys_addr = (raw_alloc + 4095) & ~0xFFF;
+    elf32_phdr_t* phdrs = (elf32_phdr_t*)kmalloc((uint32_t)ehdr.e_phnum * sizeof(elf32_phdr_t));
+    if (phdrs == (elf32_phdr_t*)0) {
+        print("ELF Error: No memory for PHDR table.\n");
+        sys_close(fd);
+        return -1;
+    }
 
-            int seg_fd = sys_open(filename, O_RDONLY);
-            int skip = phdr.p_offset;
-            while (skip > 0) {
-                int r = skip > 64 ? 64 : skip;
-                sys_read(seg_fd, tmp, r);
-                skip -= r;
+    bool loaded_anything = false;
+    char scratch[64];
+
+    uint32_t ph_skip = ehdr.e_phoff;
+    while (ph_skip > 0) {
+        int chunk = (ph_skip > sizeof(scratch)) ? (int)sizeof(scratch) : (int)ph_skip;
+        int got = sys_read(fd, scratch, chunk);
+        if (got <= 0) {
+            print("ELF Error: PHDR seek failed.\n");
+            sys_close(fd);
+            return -1;
+        }
+        ph_skip -= (uint32_t)got;
+    }
+
+    for (uint16_t i = 0; i < ehdr.e_phnum; i++) {
+        if (ehdr.e_phentsize > sizeof(elf32_phdr_t)) {
+            if (sys_read(fd, &phdrs[i], sizeof(elf32_phdr_t)) != (int)sizeof(elf32_phdr_t)) {
+                print("ELF Error: PHDR read failed.\n");
+                sys_close(fd);
+                return -1;
             }
-            
-            sys_read(seg_fd, (void*)(phys_addr + offset_in_page), phdr.p_filesz);
-            sys_close(seg_fd);
 
-            if (phdr.p_memsz > phdr.p_filesz) {
-                uint8_t* bss = (uint8_t*)(phys_addr + offset_in_page + phdr.p_filesz);
-                for (uint32_t j = 0; j < (phdr.p_memsz - phdr.p_filesz); j++) bss[j] = 0;
+            uint32_t trailing = (uint32_t)ehdr.e_phentsize - sizeof(elf32_phdr_t);
+            while (trailing > 0) {
+                int chunk = (trailing > sizeof(scratch)) ? (int)sizeof(scratch) : (int)trailing;
+                int got = sys_read(fd, scratch, chunk);
+                if (got <= 0) {
+                    print("ELF Error: PHDR read failed.\n");
+                    sys_close(fd);
+                    return -1;
+                }
+                trailing -= (uint32_t)got;
             }
-
-            for (uint32_t j = 0; j < pages_needed; j++) {
-                vmm_map_page(pagedir, 
-                             (phdr.p_vaddr & ~0xFFF) + (j * 4096), 
-                             phys_addr + (j * 4096), 
-                             PTE_USER | PTE_RW);
+        } else {
+            if (sys_read(fd, &phdrs[i], sizeof(elf32_phdr_t)) != (int)sizeof(elf32_phdr_t)) {
+                print("ELF Error: PHDR read failed.\n");
+                sys_close(fd);
+                return -1;
             }
         }
     }
+
     sys_close(fd);
+
+    for (uint16_t i = 0; i < ehdr.e_phnum; i++) {
+        elf32_phdr_t phdr = phdrs[i];
+        if (phdr.p_type != PT_LOAD || phdr.p_memsz == 0) {
+            continue;
+        }
+        if (phdr.p_filesz > phdr.p_memsz) {
+            print("ELF Error: Corrupted segment sizes.\n");
+            return -1;
+        }
+
+        loaded_anything = true;
+
+        uint32_t offset_in_page = phdr.p_vaddr & 0xFFFU;
+        uint32_t total_mem = phdr.p_memsz + offset_in_page;
+        uint32_t pages_needed = (total_mem + 4095U) / 4096U;
+        uint32_t alloc_size = pages_needed * 4096U;
+
+        uint32_t raw = (uint32_t)kmalloc(alloc_size + 4095U);
+        if (raw == 0) {
+            print("ELF Error: Out of memory.\n");
+            return -1;
+        }
+        uint32_t segment_phys_base = (raw + 4095U) & ~0xFFFU;
+
+        for (uint32_t z = 0; z < alloc_size; z++) {
+            ((uint8_t*)segment_phys_base)[z] = 0;
+        }
+
+        int seg_fd = sys_open(filename, O_RDONLY);
+        if (seg_fd == -1) {
+            print("ELF Error: Cannot reopen segment.\n");
+            return -1;
+        }
+
+        uint32_t seg_skip = phdr.p_offset;
+        while (seg_skip > 0) {
+            int chunk = (seg_skip > sizeof(scratch)) ? (int)sizeof(scratch) : (int)seg_skip;
+            int got = sys_read(seg_fd, scratch, chunk);
+            if (got <= 0) {
+                sys_close(seg_fd);
+                print("ELF Error: Segment seek failed.\n");
+                return -1;
+            }
+            seg_skip -= (uint32_t)got;
+        }
+
+        uint8_t* segment_dst = (uint8_t*)(segment_phys_base + offset_in_page);
+        if (phdr.p_filesz > 0) {
+            uint32_t total_copied = 0;
+            while (total_copied < phdr.p_filesz) {
+                int got = sys_read(
+                    seg_fd,
+                    segment_dst + total_copied,
+                    (int)(phdr.p_filesz - total_copied)
+                );
+                if (got <= 0) {
+                    sys_close(seg_fd);
+                    print("ELF Error: Segment read failed.\n");
+                    return -1;
+                }
+                total_copied += (uint32_t)got;
+            }
+        }
+        sys_close(seg_fd);
+
+        if (phdr.p_memsz > phdr.p_filesz) {
+            uint8_t* bss = segment_dst + phdr.p_filesz;
+            for (uint32_t j = 0; j < (phdr.p_memsz - phdr.p_filesz); j++) {
+                bss[j] = 0;
+            }
+        }
+
+        uint32_t virt_base = phdr.p_vaddr & ~0xFFFU;
+        for (uint32_t page = 0; page < pages_needed; page++) {
+            vmm_map_page(
+                page_directory,
+                virt_base + (page * 4096U),
+                segment_phys_base + (page * 4096U),
+                PTE_USER | PTE_RW | PTE_PRESENT
+            );
+        }
+    }
 
     if (!loaded_anything) {
         print("ELF Error: No loadable segments.\n");
         return -1;
     }
 
-    int task_id = create_task((void (*)(void))ehdr.e_entry, pagedir);
+    int task_id = create_task((void (*)(void))ehdr.e_entry, page_directory);
     if (task_id == -1) {
         print("ELF Error: Task limit reached (Max 4). Please reboot OS!\n");
     }
