@@ -101,9 +101,7 @@ void login_process_mouse(int mx, int my, bool left_now, bool j_c) {
         } else if (login_hover_login) {
             try_login();
         } else {
-            int field_w = win_w - 100;
-    if (field_w < 240) field_w = win_w - 40;
-    int field_h = 46, field_x = cx - field_w / 2;
+            int field_h = 46;
             int user_y = login_y + 142, pass_y = login_y + 218;
             if (point_in_rect(mx, my, field_x, user_y, field_w, field_h)) active_field = 0;
             else if (point_in_rect(mx, my, field_x, pass_y, field_w, field_h)) active_field = 1;
