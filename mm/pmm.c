@@ -1,6 +1,6 @@
 #include "pmm.h"
 
-#define PMM_MAX_BLOCKS (4U * 1024U * 1024U * 1024U / PMM_BLOCK_SIZE)
+#define PMM_MAX_BLOCKS 1048576U
 #define PMM_BITMAP_WORDS (PMM_MAX_BLOCKS / 32U)
 
 static uint32_t memory_bitmap[PMM_BITMAP_WORDS];

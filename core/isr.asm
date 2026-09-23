@@ -97,3 +97,5 @@ isr_stub_table:
     dd isr%+i
 %assign i i+1
 %endrep
+
+section .note.GNU-stack noalloc noexec nowrite progbits
