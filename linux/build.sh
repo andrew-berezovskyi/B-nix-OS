@@ -27,7 +27,11 @@ git -C "$SOURCE_DIR" checkout --detach "$BUILDROOT_COMMIT"
 
 mkdir -p "$OUTPUT_DIR"
 make -C "$SOURCE_DIR" O="$OUTPUT_DIR" BR2_EXTERNAL="$SCRIPT_DIR" b_nix_x86_64_defconfig
-make -C "$SOURCE_DIR" O="$OUTPUT_DIR" BR2_EXTERNAL="$SCRIPT_DIR" "${@:-all}"
+if [[ $# -gt 0 ]]; then
+    make -C "$SOURCE_DIR" O="$OUTPUT_DIR" BR2_EXTERNAL="$SCRIPT_DIR" "$@"
+else
+    make -C "$SOURCE_DIR" O="$OUTPUT_DIR" BR2_EXTERNAL="$SCRIPT_DIR" all
+fi
 
 echo
 echo "B-nix Linux images: $OUTPUT_DIR/images"
