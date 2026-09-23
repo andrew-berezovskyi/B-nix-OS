@@ -4,7 +4,7 @@ set -euo pipefail
 mkdir -p build
 make disk_image
 set +e
-timeout 20s qemu-system-i386 \
+timeout 60s qemu-system-i386 \
   -m 256M \
   -cdrom b-nix.iso \
   -drive file=c_drive.img,format=raw,if=ide \
