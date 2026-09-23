@@ -5,9 +5,11 @@
 #include "ata.h"
 #include "kheap.h"
 
-#define DESKTOP_TOP_BAR_H   32
-#define DESKTOP_DOCK_W      60
-#define DESKTOP_TITLE_H     32
+#define DESKTOP_TOP_BAR_H   34
+#define DESKTOP_DOCK_W      360
+#define DESKTOP_DOCK_H      70
+#define DESKTOP_DOCK_MARGIN 18
+#define DESKTOP_TITLE_H     36
 
 window_t windows[MAX_WINDOWS];
 int focused_window = -1; 
@@ -195,20 +197,22 @@ void app_viewer_draw(int x, int y, int w, int h) {
 // СПРАВЖНІЙ КОМПОЗИТНИЙ WINDOW MANAGER
 // ==============================================================================
 void draw_kali_window_frame(int x, int y, int ww, int wh, bool active, const char* title) {
-    uint32_t border = active ? 0x00A0C8 : 0x3A3A3A;
-    draw_filled_rect(x, y, ww, wh, border); 
-    draw_filled_rect(x + 1, y + 1, ww - 2, wh - 2, 0x1A1A1A); 
-    
-    uint32_t title_bg = active ? 0x252A30 : 0x1E1E1E;
-    draw_filled_rect(x + 1, y + 1, ww - 2, DESKTOP_TITLE_H - 1, title_bg);
-    if (active) draw_filled_rect(x + 1, y + 1, ww - 2, 3, 0x00B4D8); 
-    
-    if (main_font_data) draw_ttf_string(x + 10, y + 22, main_font_data, title, 14.0f, 0xE0E0E0);
-    
-    int cl_x = x + ww - 34; 
-    draw_filled_rect(cl_x, y + 4, 28, 24, 0xC03030);
-    draw_rect_outline(cl_x, y + 4, 28, 24, 0xA02020); 
-    if (main_font_data) draw_ttf_string(cl_x + 9, y + 21, main_font_data, "X", 13.0f, 0xFFFFFF);
+    uint32_t border = active ? 0x7FAEFF : 0x4B5565;
+    draw_rounded_rect(x, y, ww, wh, 10, border);
+    draw_rounded_rect(x + 1, y + 1, ww - 2, wh - 2, 9, 0x121722);
+    draw_filled_rect(x + 1, y + DESKTOP_TITLE_H, ww - 2, wh - DESKTOP_TITLE_H - 1, 0x121722);
+
+    uint32_t title_bg = active ? 0xEEF2F7 : 0xD8DEE7;
+    draw_rounded_rect(x + 1, y + 1, ww - 2, DESKTOP_TITLE_H, 9, title_bg);
+    draw_filled_rect(x + 1, y + DESKTOP_TITLE_H - 9, ww - 2, 9, title_bg);
+    draw_filled_circle(x + 16, y + 18, 6, 0xFF605C);
+    draw_filled_circle(x + 36, y + 18, 6, 0xFFBD44);
+    draw_filled_circle(x + 56, y + 18, 6, 0x00CA4E);
+
+    if (main_font_data) {
+        int tw = measure_ttf_text_width(main_font_data, title, 14.0f);
+        draw_ttf_string(x + (ww - tw) / 2, y + 24, main_font_data, title, 14.0f, 0x253044);
+    }
 }
 
 void wm_init(void) {
@@ -218,17 +222,32 @@ void wm_init(void) {
         windows[i].buffer = NULL;
     }
 
-    windows[0].is_open = false; windows[0].x = 72; windows[0].y = 52; windows[0].width = 540; windows[0].height = 360;
+    int usable_w = (int)d_screen_w - 80;
+    int usable_h = (int)d_screen_h - DESKTOP_TOP_BAR_H - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - 42;
+    if (usable_w < 420) usable_w = 420;
+    if (usable_h < 280) usable_h = 280;
+
+    windows[0].is_open = false; windows[0].x = 80; windows[0].y = 64;
+    windows[0].width = usable_w < 620 ? usable_w : 620;
+    windows[0].height = usable_h < 390 ? usable_h : 390;
     custom_strcpy(windows[0].title, "Terminal"); windows[0].draw_content = app_term_draw;
     windows[0].on_keypress = app_term_key; windows[0].on_click = NULL;
     windows[0].buffer = kmalloc(windows[0].width * windows[0].height * 4);
 
-    windows[1].is_open = false; windows[1].x = 300; windows[1].y = 200; windows[1].width = 600; windows[1].height = 400;
+    windows[1].is_open = false;
+    windows[1].width = usable_w < 760 ? usable_w : 760;
+    windows[1].height = usable_h < 470 ? usable_h : 470;
+    windows[1].x = ((int)d_screen_w - windows[1].width) / 2;
+    windows[1].y = 70;
     custom_strcpy(windows[1].title, "Files"); windows[1].draw_content = app_fm_draw;
     windows[1].on_keypress = NULL; windows[1].on_click = app_fm_click;
     windows[1].buffer = kmalloc(windows[1].width * windows[1].height * 4);
     
-    windows[2].is_open = false; windows[2].x = 400; windows[2].y = 150; windows[2].width = 450; windows[2].height = 300;
+    windows[2].is_open = false;
+    windows[2].width = usable_w < 520 ? usable_w : 520;
+    windows[2].height = usable_h < 340 ? usable_h : 340;
+    windows[2].x = ((int)d_screen_w - windows[2].width) / 2 + 70;
+    windows[2].y = 100;
     custom_strcpy(windows[2].title, "Text Viewer"); windows[2].draw_content = app_viewer_draw;
     windows[2].on_keypress = NULL; windows[2].on_click = NULL;
     windows[2].buffer = kmalloc(windows[2].width * windows[2].height * 4);
@@ -278,7 +297,14 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
         if (left_now) {
             windows[dragging_window].x = mx - drag_off_x;
             windows[dragging_window].y = my - drag_off_y;
-            if(windows[dragging_window].y < DESKTOP_TOP_BAR_H) windows[dragging_window].y = DESKTOP_TOP_BAR_H;
+            int max_x = (int)d_screen_w - windows[dragging_window].width;
+            int max_y = (int)d_screen_h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - windows[dragging_window].height - 6;
+            if (max_x < 0) max_x = 0;
+            if (max_y < DESKTOP_TOP_BAR_H) max_y = DESKTOP_TOP_BAR_H;
+            if (windows[dragging_window].x < 0) windows[dragging_window].x = 0;
+            if (windows[dragging_window].x > max_x) windows[dragging_window].x = max_x;
+            if (windows[dragging_window].y < DESKTOP_TOP_BAR_H) windows[dragging_window].y = DESKTOP_TOP_BAR_H;
+            if (windows[dragging_window].y > max_y) windows[dragging_window].y = max_y;
         } else {
             is_dragging = false; dragging_window = -1;
         }
@@ -287,10 +313,15 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
 
     if (!j_c && !j_r) return;
 
-    if (mx < DESKTOP_DOCK_W && my >= DESKTOP_TOP_BAR_H) {
-        int di = (my - DESKTOP_TOP_BAR_H) / 58;
-        if (di == 0) { windows[0].is_open = true; focused_window = 0; windows[0].is_dirty = true; }
-        if (di == 1) { windows[1].is_open = true; focused_window = 1; windows[1].is_dirty = true; }
+    int dock_x = ((int)d_screen_w - DESKTOP_DOCK_W) / 2;
+    int dock_y = (int)d_screen_h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN;
+    if (my >= dock_y && my < dock_y + DESKTOP_DOCK_H &&
+        mx >= dock_x && mx < dock_x + DESKTOP_DOCK_W) {
+        int rel_x = mx - (dock_x + 18);
+        int di = rel_x >= 0 ? rel_x / 60 : -1;
+        if (di == 0 && windows[0].buffer) { windows[0].is_open = true; focused_window = 0; windows[0].is_dirty = true; }
+        if (di == 1 && windows[1].buffer) { windows[1].is_open = true; focused_window = 1; windows[1].is_dirty = true; }
+        if (di == 2 && windows[2].is_open && windows[2].buffer) { focused_window = 2; windows[2].is_dirty = true; }
         return;
     }
 
@@ -318,7 +349,7 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
 
         int wx = windows[win_hit].x; int wy = windows[win_hit].y; int ww = windows[win_hit].width;
 
-        if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H && mx >= wx + ww - 34 && mx <= wx + ww) {
+        if (j_c && my >= wy + 7 && my <= wy + 29 && mx >= wx + 7 && mx <= wx + 27) {
             windows[win_hit].is_open = false; focused_window = -1; windows[win_hit].is_dirty = true; return;
         }
         if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H) {
