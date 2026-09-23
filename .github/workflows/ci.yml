@@ -8,12 +8,23 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: b-nix-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Verify repository hygiene
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^build/|^iso/|\.(o|bin|iso|img|log)$)'; then
+            echo "Generated build artifacts must not be committed." >&2
+            exit 1
+          fi
       - name: Install toolchain
         run: |
           sudo apt-get update
