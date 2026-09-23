@@ -426,7 +426,7 @@ static uint32_t sample_background_bilinear(const unsigned char* pixels, int src_
 bool cache_background_image(uint8_t* img_data, uint32_t img_size) {
     int src_w, src_h, channels;
     unsigned char* pixels = stbi_load_from_memory(img_data, img_size, &src_w, &src_h, &channels, 3);
-    if (!pixels || src_w <= 0 || src_h <= 0) {
+    if (!pixels || src_w <= 0 || src_h <= 0 || src_w > 8192 || src_h > 8192) {
         if (pixels) stbi_image_free(pixels);
         return false;
     }
@@ -444,22 +444,26 @@ bool cache_background_image(uint8_t* img_data, uint32_t img_size) {
     uint32_t view_x_fp = 0, view_y_fp = 0;
     uint32_t view_w_fp = (uint32_t)src_w << 16;
     uint32_t view_h_fp = (uint32_t)src_h << 16;
-    if ((uint64_t)target_w * (uint64_t)src_h >= (uint64_t)target_h * (uint64_t)src_w) {
-        view_h_fp = (uint32_t)(((uint64_t)target_h * (uint64_t)src_w << 16) / target_w);
+    if (target_w * (uint32_t)src_h >= target_h * (uint32_t)src_w) {
+        uint32_t source_per_pixel_fp = ((uint32_t)src_w << 16) / target_w;
+        view_h_fp = target_h * source_per_pixel_fp;
         view_y_fp = (((uint32_t)src_h << 16) - view_h_fp) / 2u;
     } else {
-        view_w_fp = (uint32_t)(((uint64_t)target_w * (uint64_t)src_h << 16) / target_h);
+        uint32_t source_per_pixel_fp = ((uint32_t)src_h << 16) / target_h;
+        view_w_fp = target_w * source_per_pixel_fp;
         view_x_fp = (((uint32_t)src_w << 16) - view_w_fp) / 2u;
     }
 
     uint32_t x_denom = target_w > 1 ? target_w - 1 : 1;
     uint32_t y_denom = target_h > 1 ? target_h - 1 : 1;
+    uint32_t x_step_fp = (view_w_fp - 1u) / x_denom;
+    uint32_t y_step_fp = (view_h_fp - 1u) / y_denom;
     for (uint32_t y = 0; y < target_h; y++) {
-        uint32_t sy_fp = view_y_fp + (uint32_t)(((uint64_t)y * (view_h_fp - 1u)) / y_denom);
+        uint32_t sy_fp = view_y_fp + y * y_step_fp;
         /* Preserve the asset orientation used by the existing B-nix decoder. */
         sy_fp = (((uint32_t)src_h << 16) - 1u) - sy_fp;
         for (uint32_t x = 0; x < target_w; x++) {
-            uint32_t sx_fp = view_x_fp + (uint32_t)(((uint64_t)x * (view_w_fp - 1u)) / x_denom);
+            uint32_t sx_fp = view_x_fp + x * x_step_fp;
             new_cache[(size_t)y * target_w + x] =
                 sample_background_bilinear(pixels, src_w, src_h, sx_fp, sy_fp);
         }
