@@ -1,1 +1,1 @@
-# B-nix packages are included here as they are introduced.
+include $(sort $(wildcard $(BR2_EXTERNAL_BNIX_PATH)/package/*/*.mk))
