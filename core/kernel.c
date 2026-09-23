@@ -245,12 +245,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     
     if (bg_image_data) cache_background_image(bg_image_data, bg_image_size);
     if (icon_image_data) cache_icon_image(icon_image_data, icon_image_size);
+    serial_write("[BNIX] image caches ok\n");
 
     desktop_init(screen_w, screen_h);
+    serial_write("[BNIX] desktop ok\n");
 
     init_multitasking();
     create_task(task_gui_main, NULL);      // 🔥 Додали NULL
     create_task(task_blinker_main, NULL);
+    serial_write("[BNIX] BNIX_BOOT_OK\n");
 
     while (1) {
         asm volatile("hlt");
