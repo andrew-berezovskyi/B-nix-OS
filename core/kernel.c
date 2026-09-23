@@ -15,7 +15,8 @@
 #include "fs.h"
 #include "keyboard.h"
 #include "timer.h"
-#include "desktop.h"\n#include "serial.h"
+#include "desktop.h"
+#include "serial.h"
 
 uint8_t* main_font_data = NULL;
 uint8_t* bg_image_data = NULL; uint32_t bg_image_size = 0;
@@ -68,7 +69,8 @@ void terminal_clear(void) {
 }
 void terminal_putchar(char c) {
     static int col = 0, row = 0; uint16_t* buf = VGA_MEMORY;
-    if (c == '\n') { col = 0; row++; }
+    if (c == '
+') { col = 0; row++; }
     else { buf[row * VGA_WIDTH + col] = (uint16_t)c | (0x0A << 8); col++; if (col >= VGA_WIDTH) { col = 0; row++; } }
     if (row >= VGA_HEIGHT) row = 0;
 }

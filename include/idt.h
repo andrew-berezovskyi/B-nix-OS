@@ -20,7 +20,8 @@ struct idt_ptr_struct {
 } __attribute__((packed));
 typedef struct idt_ptr_struct idt_ptr_t;
 
-void init_idt(void);\nvoid idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags);
+void init_idt(void);
+void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags);
 
 // Оголошуємо наш новий шлюз з boot.asm
 extern void syscall_handler(void);
