@@ -17,6 +17,10 @@ bool is_dragging = false;
 int dragging_window = -1;
 int drag_off_x = 0; int drag_off_y = 0;
 int dock_hover_index = -1;
+static bool window_maximized[MAX_WINDOWS];
+static int normal_x[MAX_WINDOWS], normal_y[MAX_WINDOWS];
+static int normal_w[MAX_WINDOWS], normal_h[MAX_WINDOWS];
+static size_t window_buffer_capacity[MAX_WINDOWS];
 
 extern size_t strlen(const char* str);
 static void custom_strcpy(char* dst, const char* src) { while (*src) *dst++ = *src++; *dst = '\0'; }
@@ -280,6 +284,8 @@ void wm_init(void) {
         windows[i].is_open = false;
         windows[i].is_dirty = true;
         windows[i].buffer = NULL;
+        window_maximized[i] = false;
+        window_buffer_capacity[i] = 0;
     }
 
     int margin = d_screen_w >= 800 ? 32 : 12;
@@ -345,6 +351,11 @@ void wm_init(void) {
     windows[4].on_click = NULL;
     windows[4].buffer = kmalloc((size_t)windows[4].width * windows[4].height * 4u);
 
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (windows[i].buffer)
+            window_buffer_capacity[i] = (size_t)windows[i].width * windows[i].height * 4u;
+    }
+
     focused_window = -1;
     fm_file_count = -1;
 }
@@ -383,6 +394,45 @@ void wm_handle_keypress(char c) {
     if (focused_window >= 0 && windows[focused_window].is_open && windows[focused_window].on_keypress) {
         windows[focused_window].on_keypress(c);
         windows[focused_window].is_dirty = true;
+    }
+}
+
+static bool wm_set_window_geometry(int index, int x, int y, int width, int height) {
+    if (index < 0 || index >= MAX_WINDOWS || width <= 0 || height <= 0) return false;
+    size_t required = (size_t)width * (size_t)height * 4u;
+    if (required > window_buffer_capacity[index]) {
+        uint32_t* larger = (uint32_t*)kmalloc(required);
+        if (!larger) return false;
+        if (windows[index].buffer) kfree(windows[index].buffer);
+        windows[index].buffer = larger;
+        window_buffer_capacity[index] = required;
+    }
+    windows[index].x = x;
+    windows[index].y = y;
+    windows[index].width = width;
+    windows[index].height = height;
+    windows[index].is_dirty = true;
+    return true;
+}
+
+static void wm_toggle_maximize(int index) {
+    if (index < 0 || index >= MAX_WINDOWS) return;
+    if (!window_maximized[index]) {
+        int margin = d_screen_w >= 800 ? 16 : 6;
+        int x = margin;
+        int y = DESKTOP_TOP_BAR_H + 8;
+        int width = (int)d_screen_w - margin * 2;
+        int height = (int)d_screen_h - y - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - 8;
+        if (width < 1 || height < DESKTOP_TITLE_H + 1) return;
+        normal_x[index] = windows[index].x;
+        normal_y[index] = windows[index].y;
+        normal_w[index] = windows[index].width;
+        normal_h[index] = windows[index].height;
+        if (wm_set_window_geometry(index, x, y, width, height))
+            window_maximized[index] = true;
+    } else if (wm_set_window_geometry(index, normal_x[index], normal_y[index],
+                                      normal_w[index], normal_h[index])) {
+        window_maximized[index] = false;
     }
 }
 
@@ -456,14 +506,31 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
             windows[focused_window].is_dirty = true;
         }
 
-        int wx = windows[win_hit].x; int wy = windows[win_hit].y; int ww = windows[win_hit].width;
+        int wx = windows[win_hit].x;
+        int wy = windows[win_hit].y;
 
         if (j_c && my >= wy + 7 && my <= wy + 29 && mx >= wx + 7 && mx <= wx + 27) {
-            windows[win_hit].is_open = false; focused_window = -1; windows[win_hit].is_dirty = true; return;
+            windows[win_hit].is_open = false;
+            focused_window = -1;
+            windows[win_hit].is_dirty = true;
+            return;
         }
-        if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H) {
-            is_dragging = true; dragging_window = win_hit;
-            drag_off_x = mx - wx; drag_off_y = my - wy; return;
+        if (j_c && my >= wy + 7 && my <= wy + 29 && mx >= wx + 27 && mx <= wx + 47) {
+            windows[win_hit].is_open = false;
+            focused_window = -1;
+            windows[win_hit].is_dirty = true;
+            return;
+        }
+        if (j_c && my >= wy + 7 && my <= wy + 29 && mx >= wx + 47 && mx <= wx + 67) {
+            wm_toggle_maximize(win_hit);
+            return;
+        }
+        if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H && !window_maximized[win_hit]) {
+            is_dragging = true;
+            dragging_window = win_hit;
+            drag_off_x = mx - wx;
+            drag_off_y = my - wy;
+            return;
         }
         if (windows[win_hit].on_click) windows[win_hit].on_click(mx, my, j_r);
     } else {
