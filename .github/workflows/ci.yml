@@ -28,7 +28,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib binutils nasm grub-pc-bin grub-common xorriso mtools qemu-system-x86
+          sudo apt-get install -y gcc-multilib binutils nasm grub-pc-bin grub-common xorriso mtools qemu-system-x86 socat
       - name: Build kernel and ISO
         run: make clean all check
       - name: QEMU boot smoke test
@@ -41,3 +41,4 @@ jobs:
           path: |
             b-nix.iso
             build/qemu-serial.log
+            build/qemu-screen.ppm
