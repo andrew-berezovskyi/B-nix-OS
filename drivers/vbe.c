@@ -73,8 +73,8 @@ void* stbi_realloc_sized(void* ptr, size_t old_size, size_t new_size) {
 // 🔥 COMPOSITOR RENDER TARGETS
 // ==============================================================================
 static vbe_info_t vbe;
-static uint32_t backbuffer[1280 * 720];
-static uint32_t frontbuffer[1280 * 720]; 
+static uint32_t* backbuffer = NULL;
+static uint32_t* frontbuffer = NULL; 
 
 // Поточна ціль малювання (може бути екраном або буфером вікна)
 static uint32_t* current_rt = NULL;
@@ -171,13 +171,13 @@ void draw_rect_outline(int x, int y, int w, int h, uint32_t color) {
 
 void swap_buffers(void) {
     uint32_t* src = backbuffer;
-    uint32_t* dst = (uint32_t*)vbe.framebuffer;
     uint32_t* shadow = frontbuffer;
     uint32_t width = vbe.width;
     uint32_t height = vbe.height;
 
     for (uint32_t y = 0; y < height; y++) {
         uint32_t offset = y * width;
+        uint32_t* framebuffer_row = (uint32_t*)((uint8_t*)vbe.framebuffer + y * vbe.pitch);
         uint32_t min_x = width;
         uint32_t max_x = 0;
         for (uint32_t x = 0; x < width; x++) {
