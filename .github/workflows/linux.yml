@@ -31,7 +31,7 @@ jobs:
       - name: Install Buildroot host dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison cpio file flex git libelf-dev libncurses-dev qemu-system-x86 rsync unzip wget
+          sudo apt-get install -y build-essential bc bison cpio file flex git libelf-dev libncurses-dev qemu-system-x86 rsync socat unzip wget
       - name: Cache upstream downloads
         uses: actions/cache@v4
         with:
@@ -39,7 +39,7 @@ jobs:
           key: bnix-buildroot-2026.08-${{ runner.os }}
       - name: Build B-nix Linux image
         run: bash linux/build.sh
-      - name: Boot Linux image and verify virtio networking
+      - name: Boot Linux image and verify network and graphics
         run: bash scripts/qemu-linux-smoke.sh
       - name: Upload Linux image and diagnostics
         if: always()
@@ -50,3 +50,4 @@ jobs:
             build/linux-output/images/bzImage
             build/linux-output/images/rootfs.ext4
             build/qemu-linux-serial.log
+            build/qemu-linux-screen.ppm
