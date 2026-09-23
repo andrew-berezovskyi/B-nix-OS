@@ -81,15 +81,30 @@ static uint32_t* current_rt = NULL;
 static uint32_t rt_w = 0;
 static uint32_t rt_h = 0;
 
-void init_graphics(uint32_t* fb_addr, uint32_t w, uint32_t h, uint32_t p, uint8_t b) {
-    vbe.framebuffer = fb_addr; vbe.width = w; vbe.height = h; vbe.pitch = p; vbe.bpp = b;
-    for(int i=0; i < 1280 * 720; i++) {
-        backbuffer[i] = 0;
-        frontbuffer[i] = 0;
+bool init_graphics(uint32_t* fb_addr, uint32_t w, uint32_t h, uint32_t p, uint8_t b) {
+    if (!fb_addr || w == 0 || h == 0 || b != 32 || p < w * sizeof(uint32_t)) return false;
+    if (w > 4096 || h > 2160 || w > ((size_t)-1 / h / sizeof(uint32_t))) return false;
+
+    size_t pixels = (size_t)w * h;
+    backbuffer = (uint32_t*)kcalloc(pixels, sizeof(uint32_t));
+    frontbuffer = (uint32_t*)kcalloc(pixels, sizeof(uint32_t));
+    if (!backbuffer || !frontbuffer) {
+        if (backbuffer) kfree(backbuffer);
+        if (frontbuffer) kfree(frontbuffer);
+        backbuffer = NULL;
+        frontbuffer = NULL;
+        return false;
     }
+
+    vbe.framebuffer = fb_addr;
+    vbe.width = w;
+    vbe.height = h;
+    vbe.pitch = p;
+    vbe.bpp = b;
     current_rt = backbuffer;
     rt_w = w;
     rt_h = h;
+    return true;
 }
 
 void set_render_target(uint32_t* target, int w, int h) {
@@ -173,7 +188,7 @@ void swap_buffers(void) {
         if (min_x < width) {
             uint32_t count = max_x - min_x + 1;
             uint32_t start = offset + min_x;
-            uint32_t* dst_ptr = dst + start;
+            uint32_t* dst_ptr = framebuffer_row + min_x;
             uint32_t* src_ptr = src + start;
             uint32_t* shd_ptr = shadow + start;
             for(uint32_t i = 0; i < count; i++) {

@@ -9,6 +9,9 @@ int mouse_y = 360;
 bool mouse_left_pressed = false;
 bool mouse_right_pressed = false;
 
+static int mouse_max_x = 1280;
+static int mouse_max_y = 720;
+
 uint8_t mouse_cycle = 0;
 int8_t mouse_byte[3];
 
@@ -30,6 +33,13 @@ const uint8_t cursor_shape[16][12] = {
     {2,0,0,0,0,2,2,0,0,0,0,0},
     {0,0,0,0,0,0,0,0,0,0,0,0}
 };
+
+void mouse_set_bounds(uint32_t width, uint32_t height) {
+    if (width >= 12) mouse_max_x = (int)width;
+    if (height >= 16) mouse_max_y = (int)height;
+    if (mouse_x > mouse_max_x - 12) mouse_x = mouse_max_x - 12;
+    if (mouse_y > mouse_max_y - 16) mouse_y = mouse_max_y - 16;
+}
 
 void draw_cursor(int x, int y) {
     for (int cy = 0; cy < 16; cy++) {
@@ -75,9 +85,9 @@ void mouse_handler_main() {
                     mouse_y -= mouse_byte[2];
 
                     if (mouse_x < 0) mouse_x = 0;
-                    if (mouse_x > 1280 - 12) mouse_x = 1280 - 12;
+                    if (mouse_x > mouse_max_x - 12) mouse_x = mouse_max_x - 12;
                     if (mouse_y < 0) mouse_y = 0;
-                    if (mouse_y > 720 - 16) mouse_y = 720 - 16;
+                    if (mouse_y > mouse_max_y - 16) mouse_y = mouse_max_y - 16;
                     break;
             }
         }

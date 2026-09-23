@@ -205,7 +205,11 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
         uint32_t fb_addr = (uint32_t)(mbd->framebuffer_addr & 0xFFFFFFFF); 
         screen_w = mbd->framebuffer_width; 
         screen_h = mbd->framebuffer_height; 
-        init_graphics((uint32_t*)fb_addr, screen_w, screen_h, mbd->framebuffer_pitch, mbd->framebuffer_bpp);
+        if (!init_graphics((uint32_t*)fb_addr, screen_w, screen_h, mbd->framebuffer_pitch, mbd->framebuffer_bpp)) {
+            serial_write("[BNIX:PANIC] unsupported framebuffer or insufficient graphics memory\n");
+            for (;;) asm volatile("hlt");
+        }
+        mouse_set_bounds(screen_w, screen_h);
         
         if (mbd->flags & (1 << 3)) {
             multiboot_module_t* mod = (multiboot_module_t*)mbd->mods_addr;
