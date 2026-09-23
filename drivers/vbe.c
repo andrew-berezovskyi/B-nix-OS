@@ -402,29 +402,73 @@ void draw_cached_icon_centered(int center_x, int center_y) {
     draw_cached_icon_at(icon_cache, icon_cache_w, icon_cache_h, center_x - (icon_cache_w / 2), center_y - (icon_cache_h / 2));
 }
 
+static uint32_t sample_background_bilinear(const unsigned char* pixels, int src_w, int src_h,
+                                               uint32_t sx_fp, uint32_t sy_fp) {
+    uint32_t sx = sx_fp >> 16, sy = sy_fp >> 16;
+    uint32_t sx1 = sx + 1 < (uint32_t)src_w ? sx + 1 : sx;
+    uint32_t sy1 = sy + 1 < (uint32_t)src_h ? sy + 1 : sy;
+    uint32_t fx = sx_fp & 0xFFFFu, fy = sy_fp & 0xFFFFu;
+    uint32_t ifx = 0x10000u - fx, ify = 0x10000u - fy;
+    uint32_t w00 = (ifx * ify) >> 16;
+    uint32_t w10 = (fx * ify) >> 16;
+    uint32_t w01 = (ifx * fy) >> 16;
+    uint32_t w11 = (fx * fy) >> 16;
+    const unsigned char* p00 = &pixels[(sy * (uint32_t)src_w + sx) * 3u];
+    const unsigned char* p10 = &pixels[(sy * (uint32_t)src_w + sx1) * 3u];
+    const unsigned char* p01 = &pixels[(sy1 * (uint32_t)src_w + sx) * 3u];
+    const unsigned char* p11 = &pixels[(sy1 * (uint32_t)src_w + sx1) * 3u];
+    uint32_t r = (p00[0] * w00 + p10[0] * w10 + p01[0] * w01 + p11[0] * w11) >> 16;
+    uint32_t g = (p00[1] * w00 + p10[1] * w10 + p01[1] * w01 + p11[1] * w11) >> 16;
+    uint32_t b = (p00[2] * w00 + p10[2] * w10 + p01[2] * w01 + p11[2] * w11) >> 16;
+    return (r << 16) | (g << 8) | b;
+}
+
 bool cache_background_image(uint8_t* img_data, uint32_t img_size) {
     int src_w, src_h, channels;
     unsigned char* pixels = stbi_load_from_memory(img_data, img_size, &src_w, &src_h, &channels, 3);
-    if (!pixels) return false;
+    if (!pixels || src_w <= 0 || src_h <= 0) {
+        if (pixels) stbi_image_free(pixels);
+        return false;
+    }
+
     uint32_t target_w = vbe.width, target_h = vbe.height;
-    uint32_t* new_cache = (uint32_t*)kmalloc(target_w * target_h * sizeof(uint32_t));
+    size_t target_pixels = (size_t)target_w * (size_t)target_h;
+    uint32_t* new_cache = (uint32_t*)kmalloc(target_pixels * sizeof(uint32_t));
     if (!new_cache) { stbi_image_free(pixels); return false; }
-    int dst_x0 = ((int)target_w - src_w) / 2;
-    int dst_y0 = ((int)target_h - src_h) / 2;
-    for (int y = 0; y < src_h; y++) {
-        int dst_y = dst_y0 + y;
-        if (dst_y < 0 || dst_y >= (int)target_h) continue;
-        int src_y = src_h - 1 - y;
-        uint32_t* row = &new_cache[dst_y * target_w];
-        for (int x = 0; x < src_w; x++) {
-            int dst_x = dst_x0 + x;
-            if (dst_x < 0 || dst_x >= (int)target_w) continue;
-            int i = (src_y * src_w + x) * 3;
-            row[dst_x] = (pixels[i] << 16) | (pixels[i+1] << 8) | pixels[i+2];
+
+    /*
+     * Cover-scale the wallpaper to every framebuffer size. Mapping a centered
+     * source viewport avoids black borders; fixed-point bilinear filtering keeps
+     * the cached result smooth without requiring floating-point kernel code.
+     */
+    uint32_t view_x_fp = 0, view_y_fp = 0;
+    uint32_t view_w_fp = (uint32_t)src_w << 16;
+    uint32_t view_h_fp = (uint32_t)src_h << 16;
+    if ((uint64_t)target_w * (uint64_t)src_h >= (uint64_t)target_h * (uint64_t)src_w) {
+        view_h_fp = (uint32_t)(((uint64_t)target_h * (uint64_t)src_w << 16) / target_w);
+        view_y_fp = (((uint32_t)src_h << 16) - view_h_fp) / 2u;
+    } else {
+        view_w_fp = (uint32_t)(((uint64_t)target_w * (uint64_t)src_h << 16) / target_h);
+        view_x_fp = (((uint32_t)src_w << 16) - view_w_fp) / 2u;
+    }
+
+    uint32_t x_denom = target_w > 1 ? target_w - 1 : 1;
+    uint32_t y_denom = target_h > 1 ? target_h - 1 : 1;
+    for (uint32_t y = 0; y < target_h; y++) {
+        uint32_t sy_fp = view_y_fp + (uint32_t)(((uint64_t)y * (view_h_fp - 1u)) / y_denom);
+        /* Preserve the asset orientation used by the existing B-nix decoder. */
+        sy_fp = (((uint32_t)src_h - 1u) << 16) - sy_fp;
+        for (uint32_t x = 0; x < target_w; x++) {
+            uint32_t sx_fp = view_x_fp + (uint32_t)(((uint64_t)x * (view_w_fp - 1u)) / x_denom);
+            new_cache[(size_t)y * target_w + x] =
+                sample_background_bilinear(pixels, src_w, src_h, sx_fp, sy_fp);
         }
     }
+
     if (background_cache) kfree(background_cache);
-    background_cache = new_cache; background_cache_w = target_w; background_cache_h = target_h;
+    background_cache = new_cache;
+    background_cache_w = target_w;
+    background_cache_h = target_h;
     stbi_image_free(pixels);
     return true;
 }
