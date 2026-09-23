@@ -24,7 +24,14 @@ typedef struct {
 static inode_t inode_table[MAX_INODES];
 static uint8_t block_bitmap[MAX_BLOCKS / 8];
 
-static void custom_strcpy(char* dest, const char* src) { while (*src) *dest++ = *src++; *dest = '\0'; }
+static bool copy_name(char* dest, const char* src) {
+    int i = 0;
+    if (!dest || !src || src[0] == '\0') return false;
+    while (src[i] && i < 27) { dest[i] = src[i]; i++; }
+    if (src[i] != '\0') return false;
+    dest[i] = '\0';
+    return true;
+}
 static int custom_strcmp(const char *s1, const char *s2) {
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
@@ -76,7 +83,10 @@ static int find_inode(const char* name) {
 }
 
 static int create_fs_node(const char* name, uint8_t type) {
-    if (find_inode(name) != -1) return -1; 
+    if (!name || name[0] == '\0' || find_inode(name) != -1) return -1;
+    int name_len = 0;
+    while (name[name_len] && name_len < 28) name_len++;
+    if (name_len == 0 || name_len >= 28) return -1; 
     
     int new_ino = -1;
     for (int i = 1; i < MAX_INODES; i++) {
@@ -92,15 +102,20 @@ static int create_fs_node(const char* name, uint8_t type) {
     dir_entry_t entries[BLOCK_SIZE / sizeof(dir_entry_t)];
     
     for (int b = 0; b < 8; b++) {
-        if (root->blocks[b] == 0) root->blocks[b] = alloc_block(); 
-        
-        ata_read_sector(FS_START_LBA + 12 + root->blocks[b], (uint8_t*)entries);
+        if (root->blocks[b] == 0) {
+            int block = alloc_block();
+            if (block <= 0) return -1;
+            root->blocks[b] = (uint32_t)block;
+            custom_memset(entries, 0, sizeof(entries));
+        } else if (ata_read_sector(FS_START_LBA + 12 + root->blocks[b], (uint8_t*)entries) != 0) {
+            return -1;
+        }
         int count = BLOCK_SIZE / sizeof(dir_entry_t);
         
         for (int i = 0; i < count; i++) {
             if (entries[i].inode == 0) { 
                 entries[i].inode = new_ino;
-                custom_strcpy(entries[i].name, name);
+                if (!copy_name(entries[i].name, name)) return -1;
                 ata_write_sector(FS_START_LBA + 12 + root->blocks[b], (uint8_t*)entries);
                 sync_fs();
                 return new_ino;
@@ -150,9 +165,9 @@ int fs_unlink(const char* path) {
 
 void init_fs(void) {
     uint8_t buffer[BLOCK_SIZE];
-    ata_read_sector(FS_START_LBA, buffer);
-    
-    if (*((uint32_t*)buffer) == FS_MAGIC) {
+    int superblock_ok = ata_read_sector(FS_START_LBA, buffer);
+
+    if (superblock_ok == 0 && *((uint32_t*)buffer) == FS_MAGIC) {
         uint8_t* inode_ptr = (uint8_t*)inode_table;
         for(int i = 0; i < 10; i++) ata_read_sector(FS_START_LBA + 1 + i, inode_ptr + (i * BLOCK_SIZE));
         ata_read_sector(FS_START_LBA + 11, buffer);
@@ -161,9 +176,13 @@ void init_fs(void) {
         custom_memset(inode_table, 0, sizeof(inode_table));
         custom_memset(block_bitmap, 0, sizeof(block_bitmap));
         
+        /* Block zero is reserved because zero means "no block" on disk. */
+        block_bitmap[0] |= 1U;
         inode_table[0].type = FS_TYPE_DIR;
         inode_table[0].size = 0;
-        inode_table[0].blocks[0] = alloc_block();
+        int root_block = alloc_block();
+        if (root_block <= 0) return;
+        inode_table[0].blocks[0] = (uint32_t)root_block;
         sync_fs();
         
         int fd = fs_open("readme.txt", 4 | 2); // O_CREAT | O_WRONLY
@@ -194,10 +213,11 @@ int fs_open(const char* path, int flags) {
     while(*path == '/') path++; 
     int ino = find_inode(path);
     if (ino == -1) {
-        if (!(flags & 4)) return -1; // 4 = O_CREAT
+        if (!(flags & O_CREAT)) return -1;
         ino = create_fs_node(path, FS_TYPE_FILE);
         if (ino == -1) return -1;
     }
+    if (inode_table[ino].type != FS_TYPE_FILE) return -1;
     for (int i = 0; i < MAX_FDS; i++) {
         if (!fd_table[i].used) {
             fd_table[i].used = true; fd_table[i].inode = ino; fd_table[i].offset = 0; fd_table[i].flags = flags;
@@ -242,8 +262,9 @@ int fs_write(int fd, const void* buf, int size) {
         if (block_idx >= 8) break; 
         
         if (file->blocks[block_idx] == 0) {
-            file->blocks[block_idx] = alloc_block();
-            if (file->blocks[block_idx] == 0) break; 
+            int block = alloc_block();
+            if (block <= 0) break;
+            file->blocks[block_idx] = (uint32_t)block; 
         }
         
         ata_read_sector(FS_START_LBA + 12 + file->blocks[block_idx], sec_buf);
@@ -286,7 +307,7 @@ bool fs_readdir(int dir_fd, fs_dirent_t* out_ent) {
         for (int i = 0; i < count; i++) {
             if (entries[i].inode != 0) {
                 if (current_logical_index == fd_table[dir_fd].offset) {
-                    custom_strcpy(out_ent->name, entries[i].name);
+                    if (!copy_name(out_ent->name, entries[i].name)) return false;
                     out_ent->inode = entries[i].inode;
                     out_ent->type = inode_table[entries[i].inode].type;
                     fd_table[dir_fd].offset++; 
