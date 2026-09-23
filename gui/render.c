@@ -105,7 +105,6 @@ void draw_desktop_chrome(uint32_t w, uint32_t h) {
     draw_dock_icon(dock_x + 78,  dock_y + 10, 0x78D6B0, "F", windows[1].is_open);
     draw_dock_icon(dock_x + 138, dock_y + 10, 0xF2C66D, "N", windows[2].is_open);
     draw_filled_rect(dock_x + 202, dock_y + 13, 1, 43, 0x526176);
-    draw_dock_icon(dock_x + 218, dock_y + 10, 0xB39DDB, "A", false);
-    draw_dock_icon(dock_x + 278, dock_y + 10, 0xF08C8C, "S", false);
+    draw_dock_icon(dock_x + 218, dock_y + 10, 0xB39DDB, "A", windows[3].is_open);
+    draw_dock_icon(dock_x + 278, dock_y + 10, 0xF08C8C, "S", windows[4].is_open);
 }
-
