@@ -153,10 +153,13 @@ static int load_elf_and_run(const char* filename) {
         }
 
         uint32_t total_mem = phdr.p_memsz + offset_in_page;
-        uint32_t pages_needed = (total_mem + 4095U) / 4096U;
-        if (total_mem > MAX_ELF_SEGMENT_BYTES || total_mem > 0xFFFFFFFFU - 4095U ||
-            pages_needed == 0 || pages_needed > MAX_ELF_SEGMENT_BYTES / 4096U) {
+        if (total_mem > MAX_ELF_SEGMENT_BYTES) {
             print("ELF Error: Segment exceeds loader limits.\n");
+            return -1;
+        }
+        uint32_t pages_needed = (total_mem + 4095U) / 4096U;
+        if (pages_needed == 0 || pages_needed > MAX_ELF_SEGMENT_BYTES / 4096U) {
+            print("ELF Error: Invalid segment page count.\n");
             return -1;
         }
         uint32_t alloc_size = pages_needed * 4096U;
