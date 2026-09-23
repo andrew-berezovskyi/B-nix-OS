@@ -13,6 +13,12 @@ B-nix OS is an experimental 32-bit x86 operating system with a freestanding C ke
 - Persistent educational filesystem, shell and file manager.
 - Login screen, compositor, movable windows and a calculator app.
 
+## Desktop experience
+
+The current visual milestone introduces an original B-nix aurora wallpaper, a compact top system bar, a centered application dock, macOS-inspired traffic-light window controls, a redesigned login card, and a consistent light/dark palette across the terminal, file manager and viewer.
+
+Every CI boot captures `build/qemu-screen.ppm` alongside the ISO and serial log, so visual regressions can be reviewed from the workflow artifact.
+
 ## Reproducible build
 
 On Ubuntu/Debian:
