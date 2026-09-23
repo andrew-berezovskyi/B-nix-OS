@@ -407,12 +407,12 @@ static uint32_t sample_background_bilinear(const unsigned char* pixels, int src_
     uint32_t sx = sx_fp >> 16, sy = sy_fp >> 16;
     uint32_t sx1 = sx + 1 < (uint32_t)src_w ? sx + 1 : sx;
     uint32_t sy1 = sy + 1 < (uint32_t)src_h ? sy + 1 : sy;
-    uint32_t fx = sx_fp & 0xFFFFu, fy = sy_fp & 0xFFFFu;
-    uint32_t ifx = 0x10000u - fx, ify = 0x10000u - fy;
-    uint32_t w00 = (ifx * ify) >> 16;
-    uint32_t w10 = (fx * ify) >> 16;
-    uint32_t w01 = (ifx * fy) >> 16;
-    uint32_t w11 = (fx * fy) >> 16;
+    uint32_t fx = (sx_fp >> 8) & 0xFFu, fy = (sy_fp >> 8) & 0xFFu;
+    uint32_t ifx = 256u - fx, ify = 256u - fy;
+    uint32_t w00 = ifx * ify;
+    uint32_t w10 = fx * ify;
+    uint32_t w01 = ifx * fy;
+    uint32_t w11 = fx * fy;
     const unsigned char* p00 = &pixels[(sy * (uint32_t)src_w + sx) * 3u];
     const unsigned char* p10 = &pixels[(sy * (uint32_t)src_w + sx1) * 3u];
     const unsigned char* p01 = &pixels[(sy1 * (uint32_t)src_w + sx) * 3u];
@@ -457,7 +457,7 @@ bool cache_background_image(uint8_t* img_data, uint32_t img_size) {
     for (uint32_t y = 0; y < target_h; y++) {
         uint32_t sy_fp = view_y_fp + (uint32_t)(((uint64_t)y * (view_h_fp - 1u)) / y_denom);
         /* Preserve the asset orientation used by the existing B-nix decoder. */
-        sy_fp = (((uint32_t)src_h - 1u) << 16) - sy_fp;
+        sy_fp = (((uint32_t)src_h << 16) - 1u) - sy_fp;
         for (uint32_t x = 0; x < target_w; x++) {
             uint32_t sx_fp = view_x_fp + (uint32_t)(((uint64_t)x * (view_w_fp - 1u)) / x_denom);
             new_cache[(size_t)y * target_w + x] =
