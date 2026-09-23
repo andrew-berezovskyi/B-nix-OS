@@ -21,8 +21,10 @@ static int bitmap_test(uint32_t bit) {
 
 void pmm_reserve_region(uint32_t base, uint32_t size) {
     uint32_t first = base / PMM_BLOCK_SIZE;
-    uint32_t last = (base + size + PMM_BLOCK_SIZE - 1U) / PMM_BLOCK_SIZE;
-    if (last > max_blocks) last = max_blocks;
+    uint64_t end = (uint64_t)base + size;
+    uint64_t rounded = end + PMM_BLOCK_SIZE - 1U;
+    uint32_t last = rounded / PMM_BLOCK_SIZE > max_blocks
+        ? max_blocks : (uint32_t)(rounded / PMM_BLOCK_SIZE);
     for (uint32_t frame = first; frame < last; ++frame) {
         if (!bitmap_test(frame)) {
             bitmap_set(frame);
@@ -32,9 +34,12 @@ void pmm_reserve_region(uint32_t base, uint32_t size) {
 }
 
 void pmm_free_region(uint32_t base, uint32_t size) {
-    uint32_t first = (base + PMM_BLOCK_SIZE - 1U) / PMM_BLOCK_SIZE;
-    uint32_t last = (base + size) / PMM_BLOCK_SIZE;
-    if (last > max_blocks) last = max_blocks;
+    uint64_t rounded_base = (uint64_t)base + PMM_BLOCK_SIZE - 1U;
+    uint32_t first = rounded_base / PMM_BLOCK_SIZE > max_blocks
+        ? max_blocks : (uint32_t)(rounded_base / PMM_BLOCK_SIZE);
+    uint64_t end = (uint64_t)base + size;
+    uint32_t last = end / PMM_BLOCK_SIZE > max_blocks
+        ? max_blocks : (uint32_t)(end / PMM_BLOCK_SIZE);
     for (uint32_t frame = first; frame < last; ++frame) {
         if (bitmap_test(frame)) {
             bitmap_unset(frame);
