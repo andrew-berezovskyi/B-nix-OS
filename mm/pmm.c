@@ -58,7 +58,7 @@ void init_pmm(uint32_t mem_size_kb) {
     }
 
     /* Kernel, boot modules, static graphics buffers and bootstrap heap. */
-    pmm_reserve_region(0, 32U * 1024U * 1024U);
+    pmm_reserve_region(0, 48U * 1024U * 1024U);
 }
 
 uint32_t pmm_alloc_block(void) {

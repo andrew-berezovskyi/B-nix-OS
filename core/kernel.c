@@ -196,7 +196,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
         init_pmm(64U * 1024U);
     }
     serial_write("[BNIX] pmm ok\n");
-    init_kheap(0x1000000, 16 * 1024 * 1024);
+    init_kheap(0x1000000, 32 * 1024 * 1024);
     serial_write("[BNIX] heap ok\n");
     init_vmm();
     serial_write("[BNIX] vmm ok\n");
