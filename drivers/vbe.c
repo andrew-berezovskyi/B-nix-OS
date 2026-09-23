@@ -484,15 +484,20 @@ static void draw_procedural_aurora_background(void) {
     int band_half = (int)height / 3;
     if (band_half < 1) band_half = 1;
 
-    for (uint32_t y = 0; y < height; y++) {
-        uint32_t yn = (y * 255u) / safe_h;
-        for (uint32_t x = 0; x < width; x++) {
-            uint32_t xn = (x * 255u) / safe_w;
+    uint32_t x_step = (255u << 16) / safe_w;
+    uint32_t y_step = (255u << 16) / safe_h;
+    uint32_t glow_scale = (72u << 16) / (uint32_t)band_half;
+    uint32_t yn_fp = 0;
+    for (uint32_t y = 0; y < height; y++, yn_fp += y_step) {
+        uint32_t yn = yn_fp >> 16;
+        uint32_t xn_fp = 0;
+        for (uint32_t x = 0; x < width; x++, xn_fp += x_step) {
+            uint32_t xn = xn_fp >> 16;
             int band_center = (int)height / 2 + ((int)x - (int)width / 2) / 5;
             int distance = (int)y - band_center;
             if (distance < 0) distance = -distance;
             uint32_t glow = distance < band_half
-                ? (uint32_t)((band_half - distance) * 72 / band_half) : 0u;
+                ? ((uint32_t)(band_half - distance) * glow_scale) >> 16 : 0u;
 
             uint32_t r = 10u + (xn * 28u) / 255u + (yn * 10u) / 255u;
             uint32_t g = 18u + (yn * 25u) / 255u + glow / 2u;
