@@ -364,6 +364,13 @@ void wm_init(void) {
     fm_file_count = -1;
 }
 
+static void wm_draw_window_shadow(int index) {
+    if (index < 0 || index >= MAX_WINDOWS || window_maximized[index]) return;
+    window_t* win = &windows[index];
+    draw_rounded_rect(win->x + 6, win->y + 8, win->width, win->height, 11, 0x101522);
+    draw_rounded_rect(win->x + 3, win->y + 4, win->width, win->height, 11, 0x182033);
+}
+
 void wm_draw_windows(void) {
     // 1. Оновлення брудних буферів (Рендер ізольовано)
     for(int i=0; i<MAX_WINDOWS; i++) {
@@ -383,6 +390,7 @@ void wm_draw_windows(void) {
     // 2. Композиція (Швидке накладання готових вікон на екран)
     for(int i=0; i<MAX_WINDOWS; i++) {
         if(windows[i].is_open && i != focused_window) {
+            wm_draw_window_shadow(i);
             draw_buffer_to_screen(windows[i].buffer, windows[i].width, windows[i].height, windows[i].x, windows[i].y);
         }
     }
@@ -390,6 +398,7 @@ void wm_draw_windows(void) {
     // Активне вікно малюється останнім
     if (focused_window >= 0 && windows[focused_window].is_open) {
         int i = focused_window;
+        wm_draw_window_shadow(i);
         draw_buffer_to_screen(windows[i].buffer, windows[i].width, windows[i].height, windows[i].x, windows[i].y);
     }
 }
