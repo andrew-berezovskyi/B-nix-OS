@@ -1,33 +1,46 @@
 # B-nix OS
 
-An experimental 32-bit operating system with its own kernel, graphical desktop, and small applications. The build creates a GRUB-bootable ISO and runs it in QEMU with a separate virtual disk image.
+B-nix OS is an experimental 32-bit x86 operating system with a freestanding C kernel, GRUB/Multiboot boot path, a graphical desktop, a small persistent filesystem, and ELF applications.
 
-## Implemented areas
+> Current target: QEMU `qemu-system-i386`. Real hardware, UEFI, SMP, networking, audio and USB are not yet supported.
 
-- Kernel boot, GDT, IDT, and system calls.
-- Keyboard, mouse, timer, RTC, ATA, and VBE drivers.
-- Memory management, a filesystem, and a shell.
-- Desktop, windows, login screen, and a calculator application.
+## Features
 
-This is an educational project intended for a virtual machine.
+- GDT, IDT, CPU exception diagnostics and serial panic output.
+- PIT-driven preemptive kernel tasks.
+- Keyboard, PS/2 mouse, RTC, ATA PIO and VBE framebuffer drivers.
+- Physical/virtual memory management and a kernel heap.
+- Persistent educational filesystem, shell and file manager.
+- Login screen, compositor, movable windows and a calculator app.
 
-## Build and run
+## Reproducible build
 
-Use a Linux environment with `make`, `gcc` capable of 32-bit compilation, `nasm`, `ld`, `grub-mkrescue`, and `qemu-system-i386`. GRUB ISO creation may also require `xorriso`.
+On Ubuntu/Debian:
 
 ```bash
-make             # build b-nix.iso
-make run         # build, create the disk image if needed, and start QEMU
+sudo apt-get install gcc-multilib binutils nasm grub-pc-bin grub-common xorriso qemu-system-x86
+make clean all check
+make run
 ```
 
-`make disk_image` creates a 10 MB `c_drive.img` if it does not already exist. `make clean` removes the build outputs listed in the Makefile but leaves `c_drive.img` in place, so disk state can survive subsequent runs.
+Headless smoke test:
+
+```bash
+bash scripts/qemu-smoke.sh
+```
+
+The CI workflow builds the ISO, validates the Multiboot header, boots it in QEMU and waits for the `BNIX_BOOT_OK` serial marker.
+
+Login for the current demo UI: `admin` / `1234`. This is a temporary UI gate, not a security boundary.
 
 ## Repository layout
 
-- `core/` — boot code and kernel.
-- `drivers/` — device drivers.
-- `mm/` — memory management.
+- `core/` — boot, descriptor tables, exceptions, syscalls and kernel entry.
+- `drivers/` — serial, input, timer, ATA, RTC and framebuffer drivers.
+- `mm/` — physical memory, paging and kernel heap.
 - `fs/` — filesystem and shell.
-- `gui/` — graphical interface.
-- `apps/` — applications.
-- `Makefile`, `linker.ld`, and `grub.cfg` — build and boot configuration.
+- `gui/` — desktop, renderer, login and window manager.
+- `apps/` — ELF applications and the small userspace support library.
+- `docs/` — architecture and development roadmap.
+
+Generated binaries, ISO images, virtual disks and object files are intentionally not committed. Download release images from GitHub Actions or Releases.

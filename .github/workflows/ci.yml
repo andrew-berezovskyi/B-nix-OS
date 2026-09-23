@@ -1,0 +1,32 @@
+name: build-and-boot
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib binutils nasm grub-pc-bin grub-common xorriso qemu-system-x86
+      - name: Build kernel and ISO
+        run: make clean all check
+      - name: QEMU boot smoke test
+        run: bash scripts/qemu-smoke.sh
+      - name: Upload ISO and serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b-nix-build
+          path: |
+            b-nix.iso
+            build/qemu-serial.log

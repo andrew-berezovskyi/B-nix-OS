@@ -15,7 +15,7 @@
 #include "fs.h"
 #include "keyboard.h"
 #include "timer.h"
-#include "desktop.h"
+#include "desktop.h"\n#include "serial.h"
 
 uint8_t* main_font_data = NULL;
 uint8_t* bg_image_data = NULL; uint32_t bg_image_size = 0;
