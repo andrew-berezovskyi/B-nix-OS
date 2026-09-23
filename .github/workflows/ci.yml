@@ -29,8 +29,58 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-multilib binutils nasm grub-pc-bin grub-common xorriso mtools qemu-system-x86 socat
-      - name: Build kernel and ISO
+      - name: Build legacy kernel and ISO
         run: make clean all check
+      - name: Validate Linux platform configuration
+        shell: bash
+        run: |
+          source_dir="$PWD/build/buildroot-ci-src"
+          output_dir="$PWD/build/buildroot-ci-output"
+          mkdir -p "$source_dir"
+          git -C "$source_dir" init
+          git -C "$source_dir" remote add origin https://gitlab.com/buildroot.org/buildroot.git
+          git -C "$source_dir" fetch --depth 1 origin d5180309b1b66ef3b8eaccca70ad69be8e0729a1
+          git -C "$source_dir" checkout --detach FETCH_HEAD
+          make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$PWD/linux" b_nix_x86_64_defconfig
+          grep -q '^BR2_x86_64=y
+        run: bash scripts/qemu-smoke.sh
+      - name: Upload ISO and serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b-nix-build
+          path: |
+            b-nix.iso
+            calc.bin
+            build/qemu-serial.log
+            build/qemu-screen.ppm
+ "$output_dir/.config"
+          grep -q '^BR2_TARGET_GENERIC_HOSTNAME="b-nix"
+        run: bash scripts/qemu-smoke.sh
+      - name: Upload ISO and serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b-nix-build
+          path: |
+            b-nix.iso
+            calc.bin
+            build/qemu-serial.log
+            build/qemu-screen.ppm
+ "$output_dir/.config"
+          grep -q '^BR2_PACKAGE_CURL=y
+        run: bash scripts/qemu-smoke.sh
+      - name: Upload ISO and serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b-nix-build
+          path: |
+            b-nix.iso
+            calc.bin
+            build/qemu-serial.log
+            build/qemu-screen.ppm
+ "$output_dir/.config"
       - name: QEMU boot smoke test
         run: bash scripts/qemu-smoke.sh
       - name: Upload ISO and serial log
