@@ -256,59 +256,89 @@ void draw_kali_window_frame(int x, int y, int ww, int wh, bool active, const cha
     }
 }
 
+static int clamp_window_extent(int preferred, int available, int floor) {
+    if (available < floor) return available;
+    if (preferred < floor) return floor;
+    return preferred < available ? preferred : available;
+}
+
+static int centered_window_x(int width) {
+    int x = ((int)d_screen_w - width) / 2;
+    return x > 0 ? x : 0;
+}
+
 void wm_init(void) {
-    for(int i=0; i<MAX_WINDOWS; i++) {
+    for (int i = 0; i < MAX_WINDOWS; i++) {
         windows[i].is_open = false;
         windows[i].is_dirty = true;
         windows[i].buffer = NULL;
     }
 
-    int usable_w = (int)d_screen_w - 80;
-    int usable_h = (int)d_screen_h - DESKTOP_TOP_BAR_H - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - 42;
-    if (usable_w < 420) usable_w = 420;
-    if (usable_h < 280) usable_h = 280;
+    int margin = d_screen_w >= 800 ? 32 : 12;
+    int usable_w = (int)d_screen_w - margin * 2;
+    int usable_h = (int)d_screen_h - DESKTOP_TOP_BAR_H -
+                   DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - 28;
+    if (usable_w < 1) usable_w = 1;
+    if (usable_h < 1) usable_h = 1;
+    int top_y = DESKTOP_TOP_BAR_H + 18;
 
-    windows[0].is_open = false; windows[0].x = 80; windows[0].y = 64;
-    windows[0].width = usable_w < 620 ? usable_w : 620;
-    windows[0].height = usable_h < 390 ? usable_h : 390;
-    custom_strcpy(windows[0].title, "Terminal"); windows[0].draw_content = app_term_draw;
-    windows[0].on_keypress = app_term_key; windows[0].on_click = NULL;
-    windows[0].buffer = kmalloc(windows[0].width * windows[0].height * 4);
+    windows[0].is_open = false;
+    windows[0].width = clamp_window_extent(620, usable_w, 300);
+    windows[0].height = clamp_window_extent(390, usable_h, 220);
+    windows[0].x = centered_window_x(windows[0].width);
+    windows[0].y = top_y;
+    custom_strcpy(windows[0].title, "Terminal");
+    windows[0].draw_content = app_term_draw;
+    windows[0].on_keypress = app_term_key;
+    windows[0].on_click = NULL;
+    windows[0].buffer = kmalloc((size_t)windows[0].width * windows[0].height * 4u);
 
     windows[1].is_open = false;
-    windows[1].width = usable_w < 760 ? usable_w : 760;
-    windows[1].height = usable_h < 470 ? usable_h : 470;
-    windows[1].x = ((int)d_screen_w - windows[1].width) / 2;
-    windows[1].y = 70;
-    custom_strcpy(windows[1].title, "Files"); windows[1].draw_content = app_fm_draw;
-    windows[1].on_keypress = NULL; windows[1].on_click = app_fm_click;
-    windows[1].buffer = kmalloc(windows[1].width * windows[1].height * 4);
-    
+    windows[1].width = clamp_window_extent(760, usable_w, 360);
+    windows[1].height = clamp_window_extent(470, usable_h, 260);
+    windows[1].x = centered_window_x(windows[1].width);
+    windows[1].y = top_y;
+    custom_strcpy(windows[1].title, "Files");
+    windows[1].draw_content = app_fm_draw;
+    windows[1].on_keypress = NULL;
+    windows[1].on_click = app_fm_click;
+    windows[1].buffer = kmalloc((size_t)windows[1].width * windows[1].height * 4u);
+
     windows[2].is_open = false;
-    windows[2].width = usable_w < 520 ? usable_w : 520;
-    windows[2].height = usable_h < 340 ? usable_h : 340;
-    windows[2].x = ((int)d_screen_w - windows[2].width) / 2 + 70;
-    windows[2].y = 100;
-    custom_strcpy(windows[2].title, "Text Viewer"); windows[2].draw_content = app_viewer_draw;
-    windows[2].on_keypress = NULL; windows[2].on_click = NULL;
-    windows[2].buffer = kmalloc(windows[2].width * windows[2].height * 4);
+    windows[2].width = clamp_window_extent(560, usable_w, 300);
+    windows[2].height = clamp_window_extent(360, usable_h, 220);
+    windows[2].x = centered_window_x(windows[2].width);
+    windows[2].y = top_y + (usable_h > 400 ? 28 : 0);
+    custom_strcpy(windows[2].title, "Text Viewer");
+    windows[2].draw_content = app_viewer_draw;
+    windows[2].on_keypress = NULL;
+    windows[2].on_click = NULL;
+    windows[2].buffer = kmalloc((size_t)windows[2].width * windows[2].height * 4u);
 
-    windows[3].is_open = false; windows[3].width = 460; windows[3].height = 350;
-    windows[3].x = ((int)d_screen_w - windows[3].width) / 2;
-    windows[3].y = 92;
+    windows[3].is_open = false;
+    windows[3].width = clamp_window_extent(460, usable_w, 300);
+    windows[3].height = clamp_window_extent(350, usable_h, 240);
+    windows[3].x = centered_window_x(windows[3].width);
+    windows[3].y = top_y;
     custom_strcpy(windows[3].title, "About B-nix");
-    windows[3].draw_content = app_about_draw; windows[3].on_keypress = NULL; windows[3].on_click = NULL;
-    windows[3].buffer = kmalloc(windows[3].width * windows[3].height * 4);
+    windows[3].draw_content = app_about_draw;
+    windows[3].on_keypress = NULL;
+    windows[3].on_click = NULL;
+    windows[3].buffer = kmalloc((size_t)windows[3].width * windows[3].height * 4u);
 
-    windows[4].is_open = false; windows[4].width = usable_w < 620 ? usable_w : 620;
-    windows[4].height = usable_h < 390 ? usable_h : 390;
-    windows[4].x = ((int)d_screen_w - windows[4].width) / 2;
-    windows[4].y = 76;
+    windows[4].is_open = false;
+    windows[4].width = clamp_window_extent(680, usable_w, 360);
+    windows[4].height = clamp_window_extent(430, usable_h, 280);
+    windows[4].x = centered_window_x(windows[4].width);
+    windows[4].y = top_y;
     custom_strcpy(windows[4].title, "System Settings");
-    windows[4].draw_content = app_settings_draw; windows[4].on_keypress = NULL; windows[4].on_click = NULL;
-    windows[4].buffer = kmalloc(windows[4].width * windows[4].height * 4);
+    windows[4].draw_content = app_settings_draw;
+    windows[4].on_keypress = NULL;
+    windows[4].on_click = NULL;
+    windows[4].buffer = kmalloc((size_t)windows[4].width * windows[4].height * 4u);
 
-    focused_window = -1; fm_file_count = -1;
+    focused_window = -1;
+    fm_file_count = -1;
 }
 
 void wm_draw_windows(void) {
