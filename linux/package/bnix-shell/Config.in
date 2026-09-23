@@ -1,0 +1,7 @@
+config BR2_PACKAGE_BNIX_SHELL
+	bool "bnix-shell"
+	help
+	  B-nix-owned lightweight graphical session for the reference
+	  QEMU platform. It renders responsive desktop chrome directly
+	  through the Linux framebuffer while the Wayland compositor
+	  milestone is developed.
