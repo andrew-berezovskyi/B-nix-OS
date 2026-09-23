@@ -477,8 +477,43 @@ bool cache_background_image(uint8_t* img_data, uint32_t img_size) {
     return true;
 }
 
+static void draw_procedural_aurora_background(void) {
+    uint32_t width = vbe.width, height = vbe.height;
+    uint32_t safe_w = width > 1 ? width - 1 : 1;
+    uint32_t safe_h = height > 1 ? height - 1 : 1;
+    int band_half = (int)height / 3;
+    if (band_half < 1) band_half = 1;
+
+    for (uint32_t y = 0; y < height; y++) {
+        uint32_t yn = (y * 255u) / safe_h;
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t xn = (x * 255u) / safe_w;
+            int band_center = (int)height / 2 + ((int)x - (int)width / 2) / 5;
+            int distance = (int)y - band_center;
+            if (distance < 0) distance = -distance;
+            uint32_t glow = distance < band_half
+                ? (uint32_t)((band_half - distance) * 72 / band_half) : 0u;
+
+            uint32_t r = 10u + (xn * 28u) / 255u + (yn * 10u) / 255u;
+            uint32_t g = 18u + (yn * 25u) / 255u + glow / 2u;
+            uint32_t b = 43u + (xn * 58u) / 255u + glow;
+            if (r > 255u) r = 255u;
+            if (g > 255u) g = 255u;
+            if (b > 255u) b = 255u;
+            backbuffer[(size_t)y * width + x] = (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
 void draw_cached_background(void) {
-    if (!background_cache || background_cache_w != vbe.width || background_cache_h != vbe.height) { clear_screen(0x000000); return; }
-    // Фон завжди малюється на backbuffer екрану
+    if (!background_cache || background_cache_w != vbe.width || background_cache_h != vbe.height) {
+        /*
+         * High-resolution modes can exhaust the early fixed heap while PNG
+         * decoding peaks. Keep a resolution-independent Aurora desktop instead
+         * of presenting a broken black screen.
+         */
+        draw_procedural_aurora_background();
+        return;
+    }
     memcpy(backbuffer, background_cache, vbe.width * vbe.height * sizeof(uint32_t));
 }
