@@ -34,10 +34,10 @@ static void zero_page(void* page) {
     }
 }
 
-void init_vmm(void) {
+bool init_vmm(void) {
     kernel_directory = (uint32_t*)kmalloc_aligned(PAGE_SIZE);
     if (kernel_directory == (uint32_t*)0) {
-        return;
+        return false;
     }
 
     zero_page(kernel_directory);
@@ -57,9 +57,11 @@ void init_vmm(void) {
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 |= 0x80000000U;
     asm volatile("mov %0, %%cr0" :: "r"(cr0));
+    return true;
 }
 
 uint32_t* vmm_create_address_space(void) {
+    if (kernel_directory == (uint32_t*)0) return (uint32_t*)0;
     uint32_t* dir = (uint32_t*)kmalloc_aligned(PAGE_SIZE);
     if (dir == (uint32_t*)0) {
         return (uint32_t*)0;
