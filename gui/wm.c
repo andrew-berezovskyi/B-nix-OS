@@ -100,8 +100,14 @@ static char selected_filename[32] = "";
 static bool context_menu_open = false; static int context_x = 0; static int context_y = 0;
 static char viewer_content[4096]; 
 
+static int fm_sidebar_width(int window_width) {
+    if (window_width < 480) return 112;
+    if (window_width < 640) return 136;
+    return 168;
+}
+
 void app_fm_draw(int x, int y, int w, int h) {
-    int left_w = 168;
+    int left_w = fm_sidebar_width(w);
     draw_filled_rect(x, y, left_w, h, 0xE8EDF5);
     draw_filled_rect(x + left_w, y, w - left_w, h, 0xF8FAFD);
     draw_filled_rect(x + left_w - 1, y, 1, h, 0xD4DBE5);
@@ -154,7 +160,8 @@ void app_fm_click(int mx, int my, bool right_click) {
         context_menu_open = false; windows[1].is_dirty = true; return;
     }
 
-    int left_w = 168; int inner_y = DESKTOP_TITLE_H;
+    int left_w = fm_sidebar_width(windows[win_idx].width);
+    int inner_y = DESKTOP_TITLE_H;
     if (local_mx >= 0 && local_mx < left_w) {
         for (int i = 0; i < FM_NAV_COUNT; i++) {
             int ly = inner_y + 12 + i * 28;
