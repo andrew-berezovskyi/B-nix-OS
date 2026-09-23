@@ -16,6 +16,7 @@ int focused_window = -1;
 bool is_dragging = false;
 int dragging_window = -1;
 int drag_off_x = 0; int drag_off_y = 0;
+int dock_hover_index = -1;
 
 extern size_t strlen(const char* str);
 static void custom_strcpy(char* dst, const char* src) { while (*src) *dst++ = *src++; *dst = '\0'; }
@@ -385,7 +386,20 @@ void wm_handle_keypress(char c) {
     }
 }
 
+static void wm_update_dock_hover(int mx, int my) {
+    int dock_x = ((int)d_screen_w - DESKTOP_DOCK_W) / 2;
+    int dock_y = (int)d_screen_h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN;
+    dock_hover_index = -1;
+    if (mx < dock_x + 12 || mx >= dock_x + DESKTOP_DOCK_W - 12 ||
+        my < dock_y - 10 || my >= dock_y + DESKTOP_DOCK_H) return;
+
+    int rel_x = mx - (dock_x + 18);
+    int index = rel_x >= 0 ? rel_x / 60 : -1;
+    if (index >= 0 && index < 5) dock_hover_index = index;
+}
+
 void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, bool j_r) {
+    wm_update_dock_hover(mx, my);
     if (is_dragging && dragging_window != -1) {
         if (left_now) {
             windows[dragging_window].x = mx - drag_off_x;
