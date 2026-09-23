@@ -40,5 +40,6 @@ jobs:
           name: b-nix-build
           path: |
             b-nix.iso
+            calc.bin
             build/qemu-serial.log
             build/qemu-screen.ppm
