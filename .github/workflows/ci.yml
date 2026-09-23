@@ -44,7 +44,7 @@ jobs:
           make -C "$source_dir" O="$output_dir" BR2_EXTERNAL="$PWD/linux" b_nix_x86_64_defconfig
           grep -q '^BR2_x86_64=y$' "$output_dir/.config"
           grep -q '^BR2_TARGET_GENERIC_HOSTNAME="b-nix"$' "$output_dir/.config"
-          grep -q '^BR2_PACKAGE_CURL=y$' "$output_dir/.config"
+          grep -q '^BR2_PACKAGE_LIBCURL_CURL=y$' "$output_dir/.config"
       - name: QEMU boot smoke test
         run: bash scripts/qemu-smoke.sh
       - name: Upload ISO, app, and diagnostics
