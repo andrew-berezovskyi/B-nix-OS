@@ -70,28 +70,50 @@ static void draw_dock_icon(int x, int y, uint32_t accent, const char* label, boo
     if (running) draw_rounded_rect(x + 18, y + 55, 12, 3, 1, 0x70A7FF);
 }
 
-static void draw_status_tray_icons(int right_x, int y0) {
-    int x = right_x;
-    draw_filled_rect(x, y0, 18, 10, 0x3A3A3A); draw_filled_rect(x + 18, y0 + 2, 3, 6, 0x3A3A3A); draw_filled_rect(x + 3, y0 + 2, 10, 6, 0x55AA66); x += 28;
-    draw_pixel(x + 8, y0 + 8, 0xCCCCCC); draw_rect_outline(x + 4, y0 + 4, 8, 6, 0xAAAAAA); draw_rect_outline(x + 2, y0 + 2, 12, 10, 0x888888); x += 28;
-    draw_filled_rect(x, y0 + 4, 4, 8, 0xCCCCCC); draw_filled_rect(x + 4, y0 + 2, 10, 12, 0x666666);
+static void draw_status_tray_icons(int x, int y0) {
+    /* Wi-Fi-like signal, intentionally original B-nix geometry. */
+    draw_filled_circle(x + 8, y0 + 9, 2, 0xE8EEF8);
+    draw_rect_outline(x + 4, y0 + 5, 9, 7, 0xAFC0D8);
+    draw_rect_outline(x + 1, y0 + 2, 15, 12, 0x70839D);
+
+    x += 25;
+    draw_rounded_rect(x, y0 + 2, 21, 11, 3, 0xAFC0D8);
+    draw_rounded_rect(x + 2, y0 + 4, 15, 7, 2, 0x78D6B0);
+    draw_filled_rect(x + 21, y0 + 5, 2, 5, 0xAFC0D8);
 }
 
 void draw_top_bar_kali(uint32_t w) {
-    draw_filled_rect(0, 0, w, DESKTOP_TOP_BAR_H, 0x121926);
-    draw_filled_rect(0, DESKTOP_TOP_BAR_H - 1, w, 1, 0x34435A);
+    /* A compact floating control surface instead of the old solid taskbar. */
+    draw_filled_rect(0, 0, w, DESKTOP_TOP_BAR_H, 0x121826);
+    draw_filled_rect(0, DESKTOP_TOP_BAR_H - 1, w, 1, 0x465A78);
 
-    const int baseline = 23;
-    if (main_font_data) {
-        draw_filled_circle(17, 17, 9, 0x6EA8FF);
-        draw_ttf_string(13, 22, main_font_data, "B", 13.0f, 0xFFFFFF);
-        draw_ttf_string(34, baseline, main_font_data, "B-nix", 15.0f, 0xF5F8FC);
-        draw_ttf_string(87, baseline, main_font_data, "Desktop", 14.0f, 0xAEBBCD);
+    if (!main_font_data) return;
 
-        char dt[32]; format_rtc_datetime_kali(dt, sizeof(dt));
-        int tw = measure_ttf_text_width(main_font_data, dt, 14.0f);
-        draw_ttf_string((int)((w - (uint32_t)tw) / 2), baseline, main_font_data, dt, 14.0f, 0xEDF3FA);
-        draw_status_tray_icons((int)w - 106, 11);
+    draw_rounded_rect(8, 5, 92, 24, 10, 0x253149);
+    draw_filled_circle(21, 17, 8, 0x78AFFF);
+    draw_ttf_string(18, 21, main_font_data, "B", 11.0f, 0xFFFFFF);
+    draw_ttf_string(34, 22, main_font_data, "B-nix", 14.0f, 0xF7FAFF);
+
+    if (w >= 700) {
+        draw_rounded_rect(108, 5, 92, 24, 10, 0x1B2537);
+        draw_ttf_string(123, 22, main_font_data, "Workspace", 13.0f, 0xB9C6D8);
+    }
+
+    char dt[32];
+    format_rtc_datetime_kali(dt, sizeof(dt));
+    int dtw = measure_ttf_text_width(main_font_data, dt, 13.0f);
+    int tray_w = dtw + 72;
+    if (tray_w < 178) tray_w = 178;
+    int tray_x = (int)w - tray_w - 8;
+    if (tray_x < 210) tray_x = 210;
+    draw_rounded_rect(tray_x, 5, tray_w, 24, 10, 0x253149);
+    draw_status_tray_icons(tray_x + 12, 9);
+    draw_ttf_string(tray_x + 58, 22, main_font_data, dt, 13.0f, 0xEDF3FA);
+
+    if (w >= 980) {
+        const char* state = "Aurora desktop";
+        int sw = measure_ttf_text_width(main_font_data, state, 13.0f);
+        draw_ttf_string(((int)w - sw) / 2, 22, main_font_data, state, 13.0f, 0xAFC0D8);
     }
 }
 
