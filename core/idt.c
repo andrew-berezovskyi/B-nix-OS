@@ -45,6 +45,5 @@ void init_idt(void) {
     // ми змінимо цей прапорець на 0xEE, щоб програми мали право викликати це переривання.
     idt_set_gate(128, (uint32_t)syscall_handler, 0x08, 0x8E); 
 
-    idt_flush((uint32_t)&idt_ptr);
-    asm volatile("sti");
+    idt_flush((uint32_t)&idt_ptr);
 }

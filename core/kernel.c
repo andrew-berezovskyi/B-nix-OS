@@ -69,8 +69,7 @@ void terminal_clear(void) {
 }
 void terminal_putchar(char c) {
     static int col = 0, row = 0; uint16_t* buf = VGA_MEMORY;
-    if (c == '
-') { col = 0; row++; }
+    if (c == '\n') { col = 0; row++; }
     else { buf[row * VGA_WIDTH + col] = (uint16_t)c | (0x0A << 8); col++; if (col >= VGA_WIDTH) { col = 0; row++; } }
     if (row >= VGA_HEIGHT) row = 0;
 }
@@ -185,8 +184,15 @@ void task_blinker_main(void) {
 // ЯДРО
 // ==============================================================================
 void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
+    serial_init();
+    serial_write("[BNIX] boot start\n");
     init_gdt(); 
     init_idt();
+    if (magic == 0x2BADB002 && (mbd->flags & 1U)) {
+        init_pmm(mbd->mem_upper + 1024U);
+    } else {
+        init_pmm(64U * 1024U);
+    }
     init_kheap(0x1000000, 16 * 1024 * 1024);
     init_vmm();
 
