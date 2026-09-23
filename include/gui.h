@@ -43,5 +43,6 @@ typedef struct {
 } window_t;
 
 extern window_t windows[MAX_WINDOWS];
+extern int dock_hover_index;
 
 #endif
