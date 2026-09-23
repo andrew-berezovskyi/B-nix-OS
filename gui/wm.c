@@ -260,7 +260,11 @@ void draw_kali_window_frame(int x, int y, int ww, int wh, bool active, const cha
     draw_filled_rect(x + 1, y + DESKTOP_TITLE_H - 9, ww - 2, 9, title_bg);
     draw_filled_circle(x + 16, y + 18, 6, 0xFF605C);
     draw_filled_circle(x + 36, y + 18, 6, 0xFFBD44);
-    draw_filled_circle(x + 56, y + 18, 6, 0x00CA4E);
+    draw_filled_circle(x + 56, y + 18, 6, 0x28C840);
+    draw_filled_rect(x + 13, y + 17, 7, 2, 0x9E3534);
+    draw_filled_rect(x + 15, y + 15, 2, 6, 0x9E3534);
+    draw_filled_rect(x + 33, y + 17, 7, 2, 0x9B711F);
+    draw_rect_outline(x + 53, y + 15, 6, 6, 0x167A2B);
 
     if (main_font_data) {
         int tw = measure_ttf_text_width(main_font_data, title, 14.0f);
