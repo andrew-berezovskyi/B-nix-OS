@@ -196,6 +196,44 @@ void app_viewer_draw(int x, int y, int w, int h) {
     if (main_font_data) draw_ttf_string(x + 18, y + 26, main_font_data, viewer_content, 13.0f, 0x263449);
 }
 
+void app_about_draw(int x, int y, int w, int h) {
+    draw_filled_rect(x, y, w, h, 0xF8FAFD);
+    draw_filled_circle(x + w / 2, y + 68, 34, 0x6EA8FF);
+    if (!main_font_data) return;
+    draw_ttf_string(x + w / 2 - 11, y + 80, main_font_data, "B", 28.0f, 0xFFFFFF);
+    const char* name = "B-nix OS";
+    int nw = measure_ttf_text_width(main_font_data, name, 24.0f);
+    draw_ttf_string(x + (w - nw) / 2, y + 132, main_font_data, name, 24.0f, 0x1E293B);
+    const char* version = "Aurora Preview 0.2";
+    int vw = measure_ttf_text_width(main_font_data, version, 14.0f);
+    draw_ttf_string(x + (w - vw) / 2, y + 158, main_font_data, version, 14.0f, 0x526176);
+    draw_rounded_rect(x + 42, y + 184, w - 84, 86, 12, 0xE8EEF7);
+    draw_ttf_string(x + 60, y + 210, main_font_data, "32-bit x86 kernel", 14.0f, 0x334155);
+    draw_ttf_string(x + 60, y + 234, main_font_data, "QEMU reference platform", 14.0f, 0x334155);
+    draw_ttf_string(x + 60, y + 258, main_font_data, "Built with a freestanding C runtime", 14.0f, 0x334155);
+}
+
+void app_settings_draw(int x, int y, int w, int h) {
+    draw_filled_rect(x, y, 150, h, 0xE8EDF5);
+    draw_filled_rect(x + 149, y, 1, h, 0xD2DAE5);
+    draw_filled_rect(x + 150, y, w - 150, h, 0xF8FAFD);
+    if (!main_font_data) return;
+    draw_ttf_string(x + 18, y + 34, main_font_data, "Settings", 20.0f, 0x1E293B);
+    draw_rounded_rect(x + 10, y + 54, 130, 32, 8, 0xCFE1FF);
+    draw_ttf_string(x + 22, y + 76, main_font_data, "Overview", 14.0f, 0x2467C8);
+    draw_ttf_string(x + 22, y + 112, main_font_data, "Appearance", 14.0f, 0x526176);
+    draw_ttf_string(x + 22, y + 146, main_font_data, "Storage", 14.0f, 0x526176);
+
+    int content_x = x + 176;
+    draw_ttf_string(content_x, y + 42, main_font_data, "System overview", 21.0f, 0x1E293B);
+    draw_rounded_rect(content_x, y + 62, w - 202, 78, 12, 0xE8EEF7);
+    draw_ttf_string(content_x + 18, y + 91, main_font_data, "Device", 13.0f, 0x718096);
+    draw_ttf_string(content_x + 18, y + 119, main_font_data, "B-nix Virtual Machine", 15.0f, 0x263449);
+    draw_rounded_rect(content_x, y + 154, w - 202, 78, 12, 0xE8EEF7);
+    draw_ttf_string(content_x + 18, y + 183, main_font_data, "Desktop theme", 13.0f, 0x718096);
+    draw_ttf_string(content_x + 18, y + 211, main_font_data, "Aurora Blue", 15.0f, 0x263449);
+}
+
 // ==============================================================================
 // СПРАВЖНІЙ КОМПОЗИТНИЙ WINDOW MANAGER
 // ==============================================================================
@@ -254,6 +292,21 @@ void wm_init(void) {
     custom_strcpy(windows[2].title, "Text Viewer"); windows[2].draw_content = app_viewer_draw;
     windows[2].on_keypress = NULL; windows[2].on_click = NULL;
     windows[2].buffer = kmalloc(windows[2].width * windows[2].height * 4);
+
+    windows[3].is_open = false; windows[3].width = 460; windows[3].height = 350;
+    windows[3].x = ((int)d_screen_w - windows[3].width) / 2;
+    windows[3].y = 92;
+    custom_strcpy(windows[3].title, "About B-nix");
+    windows[3].draw_content = app_about_draw; windows[3].on_keypress = NULL; windows[3].on_click = NULL;
+    windows[3].buffer = kmalloc(windows[3].width * windows[3].height * 4);
+
+    windows[4].is_open = false; windows[4].width = usable_w < 620 ? usable_w : 620;
+    windows[4].height = usable_h < 390 ? usable_h : 390;
+    windows[4].x = ((int)d_screen_w - windows[4].width) / 2;
+    windows[4].y = 76;
+    custom_strcpy(windows[4].title, "System Settings");
+    windows[4].draw_content = app_settings_draw; windows[4].on_keypress = NULL; windows[4].on_click = NULL;
+    windows[4].buffer = kmalloc(windows[4].width * windows[4].height * 4);
 
     focused_window = -1; fm_file_count = -1;
 }
@@ -325,6 +378,8 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
         if (di == 0 && windows[0].buffer) { windows[0].is_open = true; focused_window = 0; windows[0].is_dirty = true; }
         if (di == 1 && windows[1].buffer) { windows[1].is_open = true; focused_window = 1; windows[1].is_dirty = true; }
         if (di == 2 && windows[2].is_open && windows[2].buffer) { focused_window = 2; windows[2].is_dirty = true; }
+        if (di == 3 && windows[3].buffer) { windows[3].is_open = true; focused_window = 3; windows[3].is_dirty = true; }
+        if (di == 4 && windows[4].buffer) { windows[4].is_open = true; focused_window = 4; windows[4].is_dirty = true; }
         return;
     }
 
