@@ -1,0 +1,2 @@
+# name type mode uid gid major minor start inc count
+/etc/init.d/S99bnix-ready f 755 0 0 - - - - -
