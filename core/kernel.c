@@ -198,7 +198,10 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     serial_write("[BNIX] pmm ok\n");
     init_kheap(0x1000000, 32 * 1024 * 1024);
     serial_write("[BNIX] heap ok\n");
-    init_vmm();
+    if (!init_vmm()) {
+        serial_write("[BNIX:PANIC] failed to initialize virtual memory\n");
+        for (;;) asm volatile("hlt");
+    }
     serial_write("[BNIX] vmm ok\n");
 
     if (magic == 0x2BADB002 && (mbd->flags & (1 << 12))) {
