@@ -1,1 +1,3 @@
-# B-nix-owned Buildroot package options are sourced here.
+menu "B-nix components"
+source "$BR2_EXTERNAL_BNIX_PATH/package/bnix-shell/Config.in"
+endmenu
