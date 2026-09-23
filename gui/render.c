@@ -7,6 +7,8 @@
 #define DESKTOP_DOCK_H      70
 #define DESKTOP_DOCK_MARGIN 18
 
+static int dock_lift[5] = {0, 0, 0, 0, 0};
+
 // УВАГА: draw_rect_outline та draw_filled_rect перенесено у vbe.c для апаратного прискорення!
 
 void draw_filled_circle(int x, int y, int r, uint32_t color) {
@@ -117,16 +119,40 @@ void draw_top_bar_kali(uint32_t w) {
     }
 }
 
+static int animated_dock_y(int base_y, int index) {
+    int target = dock_hover_index == index ? 7 : 0;
+    if (dock_lift[index] < target) dock_lift[index]++;
+    else if (dock_lift[index] > target) dock_lift[index]--;
+    return base_y - dock_lift[index];
+}
+
+static void draw_dock_tooltip(int dock_x, int dock_y) {
+    if (!main_font_data || dock_hover_index < 0 || dock_hover_index >= 5) return;
+    static const char* labels[5] = {
+        "Terminal", "Files", "Notes", "About", "Settings"
+    };
+    const char* label = labels[dock_hover_index];
+    int tw = measure_ttf_text_width(main_font_data, label, 12.0f);
+    int center_x = dock_x + 42 + dock_hover_index * 60;
+    int tip_w = tw + 20;
+    int tip_x = center_x - tip_w / 2;
+    draw_rounded_rect(tip_x + 2, dock_y - 31, tip_w, 23, 8, 0x101521);
+    draw_rounded_rect(tip_x, dock_y - 33, tip_w, 23, 8, 0xEEF3FA);
+    draw_ttf_string(tip_x + 10, dock_y - 17, main_font_data, label, 12.0f, 0x263449);
+}
+
 void draw_desktop_chrome(uint32_t w, uint32_t h) {
     draw_top_bar_kali(w);
     draw_desktop_dock(w, h);
 
     int dock_x = ((int)w - DESKTOP_DOCK_W) / 2;
     int dock_y = (int)h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN;
-    draw_dock_icon(dock_x + 18,  dock_y + 10, 0x6EA8FF, ">", windows[0].is_open);
-    draw_dock_icon(dock_x + 78,  dock_y + 10, 0x78D6B0, "F", windows[1].is_open);
-    draw_dock_icon(dock_x + 138, dock_y + 10, 0xF2C66D, "N", windows[2].is_open);
+    int icon_y = dock_y + 10;
+    draw_dock_icon(dock_x + 18,  animated_dock_y(icon_y, 0), 0x6EA8FF, ">", windows[0].is_open);
+    draw_dock_icon(dock_x + 78,  animated_dock_y(icon_y, 1), 0x78D6B0, "F", windows[1].is_open);
+    draw_dock_icon(dock_x + 138, animated_dock_y(icon_y, 2), 0xF2C66D, "N", windows[2].is_open);
     draw_filled_rect(dock_x + 202, dock_y + 13, 1, 43, 0x526176);
-    draw_dock_icon(dock_x + 218, dock_y + 10, 0xB39DDB, "A", windows[3].is_open);
-    draw_dock_icon(dock_x + 278, dock_y + 10, 0xF08C8C, "S", windows[4].is_open);
+    draw_dock_icon(dock_x + 218, animated_dock_y(icon_y, 3), 0xB39DDB, "A", windows[3].is_open);
+    draw_dock_icon(dock_x + 278, animated_dock_y(icon_y, 4), 0xF08C8C, "S", windows[4].is_open);
+    draw_dock_tooltip(dock_x, dock_y);
 }
