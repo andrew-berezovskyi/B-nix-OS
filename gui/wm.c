@@ -82,13 +82,13 @@ void app_term_draw(int x, int y, int w, int h) {
     if (main_font_data) {
         for (int r = 0; r < n_show; r++) {
             int idx = (start_idx + r) % TERM_LINE_CAP;
-            draw_ttf_string(x + 10, cy + 14, main_font_data, term_lines[idx], 13.0f, 0xD0D0D0); cy += line_h;
+            draw_ttf_string(x + 14, cy + 14, main_font_data, term_lines[idx], 13.0f, 0xD7E2F0); cy += line_h;
         }
         char prompt_line[SHELL_BUFFER_SIZE + 16]; int pp = 0; const char* pr = "B-nix> ";
         while (pr[0] && pp < (int)sizeof(prompt_line) - 2) prompt_line[pp++] = *pr++;
         for (int i = 0; i < buffer_index && pp < (int)sizeof(prompt_line) - 2; i++) prompt_line[pp++] = command_buffer[i];
         prompt_line[pp] = '\0';
-        draw_ttf_string(x + 10, cy + 14, main_font_data, prompt_line, 13.0f, 0x88FF88);
+        draw_ttf_string(x + 14, cy + 14, main_font_data, prompt_line, 13.0f, 0x78D6B0);
     }
 }
 void app_term_key(char c) { shell_handle_keypress(c); }
@@ -102,14 +102,15 @@ static char viewer_content[4096];
 
 void app_fm_draw(int x, int y, int w, int h) {
     int left_w = 168;
-    draw_filled_rect(x, y, left_w, h, 0x2B2B2B);
-    draw_filled_rect(x + left_w, y, w - left_w, h, 0xECECEC);
+    draw_filled_rect(x, y, left_w, h, 0xE8EDF5);
+    draw_filled_rect(x + left_w, y, w - left_w, h, 0xF8FAFD);
+    draw_filled_rect(x + left_w - 1, y, 1, h, 0xD4DBE5);
 
     if (main_font_data) {
         for (int i = 0; i < 4; i++) {
             int ly = y + 12 + i * 28;
-            if (i == fm_nav_sel) draw_filled_rect(x + 4, ly - 4, left_w - 8, 26, 0x3678C4);
-            uint32_t tc = (i == fm_nav_sel) ? 0xFFFFFF : 0xB0B0B0;
+            if (i == fm_nav_sel) draw_rounded_rect(x + 8, ly - 5, left_w - 16, 27, 7, 0xCFE1FF);
+            uint32_t tc = (i == fm_nav_sel) ? 0x2467C8 : 0x526176;
             draw_ttf_string(x + 12, ly + 14, main_font_data, fm_nav_paths[i], 14.0f, tc);
         }
     }
@@ -122,18 +123,19 @@ void app_fm_draw(int x, int y, int w, int h) {
 
     for (int i = 0; i < fm_file_count; i++) {
         cached_file_t* entry = &fm_file_cache[i];
-        if (custom_strcmp(selected_filename, entry->name) == 0) draw_filled_rect(fx - 4, fy - 4, 84, 88, 0xD0E8FF);
+        if (custom_strcmp(selected_filename, entry->name) == 0) draw_rounded_rect(fx - 6, fy - 6, 88, 92, 9, 0xDCEAFF);
         if (entry->type == FS_TYPE_DIR) draw_icon_folder(fx, fy); else draw_icon_file(fx + 4, fy - 8); 
-        if (main_font_data) draw_ttf_string(fx - 4, fy + 56, main_font_data, entry->name, 11.0f, 0x222222);
+        if (main_font_data) draw_ttf_string(fx - 4, fy + 56, main_font_data, entry->name, 11.0f, 0x263449);
         col++; if (col >= max_cols) { col = 0; fx = gx; fy += 100; } else fx += 92;
     }
 
     if (context_menu_open) {
-        draw_filled_rect(context_x, context_y, 180, 84, 0x111111); draw_rect_outline(context_x, context_y, 180, 84, 0x4488FF);
+        draw_rounded_rect(context_x + 3, context_y + 4, 180, 84, 9, 0x273244);
+        draw_rounded_rect(context_x, context_y, 180, 84, 9, 0xF8FAFD); draw_rect_outline(context_x, context_y, 180, 84, 0xC7D0DD);
         if (main_font_data) {
-            draw_ttf_string(context_x + 8, context_y + 14, main_font_data, "New Folder", 12.0f, 0xCFE8FF);
-            draw_ttf_string(context_x + 8, context_y + 38, main_font_data, "New Text File", 12.0f, 0xCFE8FF);
-            draw_ttf_string(context_x + 8, context_y + 62, main_font_data, "Delete (WIP)", 12.0f, (selected_filename[0] != '\0') ? 0xFF8888 : 0x666666);
+            draw_ttf_string(context_x + 12, context_y + 18, main_font_data, "New Folder", 12.0f, 0x263449);
+            draw_ttf_string(context_x + 12, context_y + 43, main_font_data, "New Text File", 12.0f, 0x263449);
+            draw_ttf_string(context_x + 12, context_y + 68, main_font_data, "Delete (WIP)", 12.0f, (selected_filename[0] != '\0') ? 0xD83A52 : 0xA1AAB8);
         }
     }
 }
@@ -190,7 +192,8 @@ void app_fm_click(int mx, int my, bool right_click) {
 }
 
 void app_viewer_draw(int x, int y, int w, int h) {
-    if (main_font_data) draw_ttf_string(x + 12, y + 16, main_font_data, viewer_content, 13.0f, 0xD0D0D0);
+    draw_filled_rect(x, y, w, h, 0xF8FAFD);
+    if (main_font_data) draw_ttf_string(x + 18, y + 26, main_font_data, viewer_content, 13.0f, 0x263449);
 }
 
 // ==============================================================================
