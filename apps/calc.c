@@ -1,40 +1,70 @@
 #include "libc.h"
 
-// Точка входу прибита до початку
-void __attribute__((section(".entry"))) _start() {
-    char input_buf[64];
-    char out_buf[32];
-    
-    sys_print("\n==================================\n");
-    sys_print(" B-NIX SMART CALCULATOR\n");
-    sys_print("==================================\n");
-    
-    get_input("Enter first number: ", input_buf);
-    int a = atoi(input_buf);
-    
-    get_input("Enter operation (+, -, *, /): ", input_buf);
-    char op = input_buf[0];
-    
-    get_input("Enter second number: ", input_buf);
-    int b = atoi(input_buf);
-    
-    int result = 0;
-    if (op == '+') result = a + b;
-    else if (op == '-') result = a - b;
-    else if (op == '*') result = a * b;
+static void print_result(int a, char op, int b, int result) {
+    char out[32];
+    sys_print("\n  ");
+    itoa(a, out); sys_print(out);
+    sys_print(" ");
+    out[0] = op; out[1] = '\0'; sys_print(out);
+    sys_print(" ");
+    itoa(b, out); sys_print(out);
+    sys_print(" = ");
+    itoa(result, out); sys_print(out);
+    sys_print("\n\n");
+}
+
+static bool calculate(int a, char op, int b, int* result) {
+    if (!result) return false;
+    if (op == '+') *result = a + b;
+    else if (op == '-') *result = a - b;
+    else if (op == '*') *result = a * b;
     else if (op == '/') {
-        if (b == 0) { sys_print("Error: Division by zero!\n\nB-nix> "); sys_exit(); }
-        result = a / b;
-    } else {
-        sys_print("Error: Unknown operation!\n\nB-nix> "); sys_exit();
+        if (b == 0) return false;
+        *result = a / b;
+    } else if (op == '%') {
+        if (b == 0) return false;
+        *result = a % b;
+    } else return false;
+    return true;
+}
+
+/*
+ * Aurora Calculator is linked as its own ELF32 image. The kernel only provides
+ * the small console syscall ABI, so the same binary can be copied onto a B-nix
+ * disk and launched without rebuilding the kernel.
+ */
+void __attribute__((section(".entry"))) _start(void) {
+    char input[64];
+    char operation[16];
+
+    sys_print("\n+----------------------------------+\n");
+    sys_print("|        AURORA CALCULATOR         |\n");
+    sys_print("+----------------------------------+\n");
+    sys_print("| +  -  *  /  %        q = quit   |\n");
+    sys_print("+----------------------------------+\n\n");
+
+    for (;;) {
+        get_input("First number (or q): ", input);
+        if (strcmp(input, "q") == 0 || strcmp(input, "quit") == 0) break;
+        int a = atoi(input);
+
+        get_input("Operation: ", operation);
+        if (strcmp(operation, "q") == 0 || strcmp(operation, "quit") == 0) break;
+
+        get_input("Second number: ", input);
+        int b = atoi(input);
+        int result = 0;
+
+        if (!calculate(a, operation[0], b, &result)) {
+            if ((operation[0] == '/' || operation[0] == '%') && b == 0)
+                sys_print("\nCannot divide by zero. Try again.\n\n");
+            else
+                sys_print("\nUnknown operation. Use +, -, *, / or %.\n\n");
+            continue;
+        }
+        print_result(a, operation[0], b, result);
     }
-    
-    sys_print("\n>>> RESULT: ");
-    itoa(a, out_buf); sys_print(out_buf); sys_print(" ");
-    out_buf[0] = op; out_buf[1] = '\0'; sys_print(out_buf); sys_print(" ");
-    itoa(b, out_buf); sys_print(out_buf); sys_print(" = ");
-    itoa(result, out_buf); sys_print(out_buf); sys_print(" <<<\n");
-    
-    sys_print("\nB-nix> ");
+
+    sys_print("\nCalculator closed.\n\nB-nix> ");
     sys_exit();
 }
