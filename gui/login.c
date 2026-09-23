@@ -8,6 +8,8 @@ static bool login_pressed_cancel = false; static bool login_pressed_login = fals
 static char username_buffer[32] = ""; static int username_len = 0;
 static char password_buffer[32] = ""; static int password_len = 0;
 static bool login_failed = false; static int active_field = 0;
+static bool login_intro_started = false;
+static uint32_t login_intro_tick = 0;
 
 typedef struct {
     bool authenticated; char username[32]; uint32_t password_shadow_hash;
@@ -27,6 +29,16 @@ static uint32_t shadow_hash_password(const char* pass) {
     uint32_t h = 2166136261u;
     for (size_t i = 0; pass[i] != '\0'; i++) { h ^= (uint8_t)pass[i]; h *= 16777619u; }
     return h;
+}
+
+static int login_intro_offset(void) {
+    if (!login_intro_started) {
+        login_intro_started = true;
+        login_intro_tick = timer_ticks;
+    }
+    uint32_t elapsed = timer_ticks - login_intro_tick;
+    if (elapsed >= 18u) return 0;
+    return (int)(18u - elapsed);
 }
 
 static bool point_in_rect(int px, int py, int x, int y, int w, int h) {
@@ -64,7 +76,7 @@ void login_process_mouse(int mx, int my, bool left_now, bool j_c) {
     int cx = (int)d_screen_w / 2;
     int cy = (int)d_screen_h / 2;
     int login_w = 440, login_h = 360;
-    int login_y = cy - login_h / 2;
+    int login_y = cy - login_h / 2 + login_intro_offset();
     int btn_w = 155, btn_h = 38, btn_y = login_y + 298;
     int cancel_x = cx - 165, login_btn_x = cx + 10;
 
@@ -81,7 +93,9 @@ void login_process_mouse(int mx, int my, bool left_now, bool j_c) {
         } else if (login_hover_login) {
             try_login();
         } else {
-            int field_w = 340, field_h = 46, field_x = cx - field_w / 2;
+            int field_w = win_w - 100;
+    if (field_w < 240) field_w = win_w - 40;
+    int field_h = 46, field_x = cx - field_w / 2;
             int user_y = login_y + 142, pass_y = login_y + 218;
             if (point_in_rect(mx, my, field_x, user_y, field_w, field_h)) active_field = 0;
             else if (point_in_rect(mx, my, field_x, pass_y, field_w, field_h)) active_field = 1;
@@ -92,22 +106,33 @@ void login_process_mouse(int mx, int my, bool left_now, bool j_c) {
 void login_draw(uint32_t width, uint32_t height) {
     draw_cached_background();
 
-    draw_filled_rect(0, 0, width, 34, 0x121926);
-    draw_filled_rect(0, 33, width, 1, 0x34435A);
+    draw_filled_rect(0, 0, width, 34, 0x121826);
+    draw_filled_rect(0, 33, width, 1, 0x465A78);
     if (main_font_data) {
-        draw_filled_circle(17, 17, 9, 0x6EA8FF);
-        draw_ttf_string(13, 22, main_font_data, "B", 13.0f, 0xFFFFFF);
-        draw_ttf_string(34, 23, main_font_data, "B-nix", 15.0f, 0xF5F8FC);
-        const char* secure = "Secure local session";
+        draw_rounded_rect(8, 5, 92, 24, 10, 0x253149);
+        draw_filled_circle(21, 17, 8, 0x78AFFF);
+        draw_ttf_string(18, 21, main_font_data, "B", 11.0f, 0xFFFFFF);
+        draw_ttf_string(34, 22, main_font_data, "B-nix", 14.0f, 0xF7FAFF);
+        const char* secure = "Local session";
         int sw = measure_ttf_text_width(main_font_data, secure, 13.0f);
-        draw_ttf_string((int)width - sw - 18, 22, main_font_data, secure, 13.0f, 0xAEBBCD);
+        if ((int)width > sw + 132) {
+            int pill_x = (int)width - sw - 32;
+            draw_rounded_rect(pill_x, 5, sw + 24, 24, 10, 0x253149);
+            draw_filled_circle(pill_x + 10, 17, 3, 0x78D6B0);
+            draw_ttf_string(pill_x + 18, 22, main_font_data, secure, 13.0f, 0xD8E2EF);
+        }
     }
 
     int cx = (int)width / 2, cy = (int)height / 2;
-    int win_w = 440, win_h = 360;
-    int wx = cx - win_w / 2, wy = cy - win_h / 2;
+    int win_w = (int)width - 32;
+    if (win_w > 440) win_w = 440;
+    if (win_w < 300) win_w = 300;
+    int win_h = 360;
+    int wx = cx - win_w / 2;
+    int wy = cy - win_h / 2 + login_intro_offset();
 
-    draw_rounded_rect(wx + 8, wy + 10, win_w, win_h, 22, 0x111827);
+    draw_rounded_rect(wx + 10, wy + 14, win_w, win_h, 22, 0x0D1320);
+    draw_rounded_rect(wx + 5, wy + 8, win_w, win_h, 22, 0x182238);
     draw_rounded_rect(wx, wy, win_w, win_h, 22, 0xE8EDF5);
     draw_rounded_rect(wx + 2, wy + 2, win_w - 4, win_h - 4, 20, 0xF7F9FC);
 
@@ -160,7 +185,10 @@ void login_draw(uint32_t width, uint32_t height) {
         draw_ttf_string(field_x, pass_y + 63, main_font_data,
                         "Incorrect username or password", 13.0f, 0xD83A52);
 
-    int btn_w = 155, btn_h = 38, btn_y = wy + 298, cancel_x = cx - 165, login_x = cx + 10;
+    int btn_gap = 20;
+    int btn_w = (field_w - btn_gap) / 2;
+    int btn_h = 38, btn_y = wy + 298;
+    int cancel_x = field_x, login_x = field_x + btn_w + btn_gap;
     uint32_t cancel_fill = login_pressed_cancel ? 0xD5DBE5 : (login_hover_cancel ? 0xE2E7EF : 0xEDF1F6);
     draw_rounded_rect(cancel_x, btn_y, btn_w, btn_h, 10, cancel_fill);
     draw_rect_outline(cancel_x, btn_y, btn_w, btn_h, 0xC8D0DC);
