@@ -186,15 +186,20 @@ void task_blinker_main(void) {
 void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     serial_init();
     serial_write("[BNIX] boot start\n");
-    init_gdt(); 
+    init_gdt();
+    serial_write("[BNIX] gdt ok\n"); 
     init_idt();
+    serial_write("[BNIX] idt ok\n");
     if (magic == 0x2BADB002 && (mbd->flags & 1U)) {
         init_pmm(mbd->mem_upper + 1024U);
     } else {
         init_pmm(64U * 1024U);
     }
+    serial_write("[BNIX] pmm ok\n");
     init_kheap(0x1000000, 16 * 1024 * 1024);
+    serial_write("[BNIX] heap ok\n");
     init_vmm();
+    serial_write("[BNIX] vmm ok\n");
 
     if (magic == 0x2BADB002 && (mbd->flags & (1 << 12))) {
         uint32_t fb_addr = (uint32_t)(mbd->framebuffer_addr & 0xFFFFFFFF); 
@@ -213,8 +218,11 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
         }
     } 
 
+    serial_write("[BNIX] graphics/modules ok\n");
     init_keyboard(); 
+    serial_write("[BNIX] keyboard ok\n");
     init_mouse(); 
+    serial_write("[BNIX] mouse ok\n");
     init_timer(50); 
     init_shell(); 
     init_fs();
