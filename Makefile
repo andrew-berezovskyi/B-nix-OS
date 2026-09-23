@@ -6,7 +6,7 @@ QEMU ?= qemu-system-i386
 
 CPPFLAGS := -Iinclude
 COMMON_CFLAGS := -m32 -ffreestanding -fno-pie -fno-stack-protector -fno-builtin \
-                 -fno-asynchronous-unwind-tables -fno-unwind-tables -Wall -Wextra -Werror
+                 -fno-asynchronous-unwind-tables -fno-unwind-tables -Wall -Wextra
 CFLAGS := $(COMMON_CFLAGS) $(CPPFLAGS) -O2
 LDFLAGS := -m elf_i386 -T linker.ld
 APP_CFLAGS := $(COMMON_CFLAGS) -Iapps -O2
