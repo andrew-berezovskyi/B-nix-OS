@@ -16,12 +16,26 @@ static uintptr_t heap_begin;
 static uintptr_t heap_end;
 
 static size_t align_size(size_t size) {
+    if (size > (size_t)-1 - (HEAP_ALIGNMENT - 1U)) return 0;
     return (size + HEAP_ALIGNMENT - 1U) & ~(HEAP_ALIGNMENT - 1U);
 }
 
 void init_kheap(uint32_t start_addr, uint32_t initial_size) {
-    heap_begin = (start_addr + HEAP_ALIGNMENT - 1U) & ~(HEAP_ALIGNMENT - 1U);
-    heap_end = (uintptr_t)start_addr + initial_size;
+    uintptr_t raw_begin = (uintptr_t)start_addr;
+    if (raw_begin > (uintptr_t)-1 - (HEAP_ALIGNMENT - 1U) ||
+        initial_size <= sizeof(header_t) + HEAP_ALIGNMENT) {
+        heap_start = 0;
+        heap_begin = 0;
+        heap_end = 0;
+        return;
+    }
+
+    heap_begin = (raw_begin + HEAP_ALIGNMENT - 1U) & ~(uintptr_t)(HEAP_ALIGNMENT - 1U);
+    heap_end = raw_begin + initial_size;
+    if (heap_end <= heap_begin + sizeof(header_t)) {
+        heap_start = 0;
+        return;
+    }
     heap_start = (header_t*)heap_begin;
     heap_start->magic = HEAP_MAGIC;
     heap_start->size = heap_end - heap_begin - sizeof(header_t);
@@ -33,6 +47,7 @@ void init_kheap(uint32_t start_addr, uint32_t initial_size) {
 void* kmalloc(size_t requested) {
     if (!heap_start || requested == 0) return 0;
     size_t size = align_size(requested);
+    if (size == 0) return 0;
 
     for (header_t* block = heap_start; block; block = block->next) {
         if (block->magic != HEAP_MAGIC) return 0;
