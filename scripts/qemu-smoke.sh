@@ -14,7 +14,11 @@ status=$?
 set -e
 
 cat build/qemu-serial.log || true
-if ! grep -q "BNIX_BOOT_OK" build/qemu-serial.log; then
+if grep -Fq "[BNIX:PANIC]" build/qemu-serial.log; then
+  echo "B-nix reported a kernel panic during boot." >&2
+  exit 1
+fi
+if ! grep -Fq "[BNIX] BNIX_BOOT_OK" build/qemu-serial.log; then
   echo "B-nix did not reach the boot-ready marker (qemu status: $status)." >&2
   exit 1
 fi
