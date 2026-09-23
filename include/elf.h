@@ -9,6 +9,13 @@
 #define ELFMAG2 'L'
 #define ELFMAG3 'F'
 
+#define ELFCLASS32 1
+#define ELFDATA2LSB 1
+#define EV_CURRENT 1
+#define ET_EXEC 2
+#define EM_386 3
+#define PF_W 0x02
+
 // Головний заголовок ELF-файлу (завжди на самому початку файлу)
 typedef struct {
     uint8_t  e_ident[16]; // Магічні числа та інфо про розрядність
