@@ -75,10 +75,18 @@ void login_handle_keypress(char c) {
 void login_process_mouse(int mx, int my, bool left_now, bool j_c) {
     int cx = (int)d_screen_w / 2;
     int cy = (int)d_screen_h / 2;
-    int login_w = 440, login_h = 360;
+    int login_w = (int)d_screen_w - 32;
+    if (login_w > 440) login_w = 440;
+    if (login_w < 300) login_w = 300;
+    int login_h = 360;
     int login_y = cy - login_h / 2 + login_intro_offset();
-    int btn_w = 155, btn_h = 38, btn_y = login_y + 298;
-    int cancel_x = cx - 165, login_btn_x = cx + 10;
+    int field_w = login_w - 100;
+    if (field_w < 240) field_w = login_w - 40;
+    int btn_gap = 20;
+    int btn_w = (field_w - btn_gap) / 2;
+    int btn_h = 38, btn_y = login_y + 298;
+    int field_x = cx - field_w / 2;
+    int cancel_x = field_x, login_btn_x = field_x + btn_w + btn_gap;
 
     login_hover_cancel = point_in_rect(mx, my, cancel_x, btn_y, btn_w, btn_h);
     login_hover_login = point_in_rect(mx, my, login_btn_x, btn_y, btn_w, btn_h);
