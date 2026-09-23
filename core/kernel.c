@@ -223,9 +223,14 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     serial_write("[BNIX] keyboard ok\n");
     init_mouse(); 
     serial_write("[BNIX] mouse ok\n");
-    init_timer(50); 
-    init_shell(); 
+    init_timer(50);
+    serial_write("[BNIX] timer configured\n");
+    asm volatile("sti");
+    serial_write("[BNIX] interrupts enabled\n");
+    init_shell();
+    serial_write("[BNIX] shell ok\n");
     init_fs();
+    serial_write("[BNIX] fs ok\n");
     
     // 🔥 ОНОВЛЕНО: Тепер ми завжди перезаписуємо calc.bin, якщо він є у модулях GRUB
     if (calc_app_data && calc_app_size > 0) {
