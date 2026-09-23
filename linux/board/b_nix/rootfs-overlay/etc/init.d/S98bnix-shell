@@ -1,0 +1,32 @@
+#!/bin/sh
+
+pidfile=/run/bnix-shell.pid
+
+case "${1:-start}" in
+    start)
+        if [ -r "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+            exit 0
+        fi
+        attempts=0
+        while [ ! -e /dev/fb0 ] && [ "$attempts" -lt 10 ]; do
+            sleep 1
+            attempts=$((attempts + 1))
+        done
+        if [ ! -e /dev/fb0 ]; then
+            echo "[BNIX-GUI] framebuffer unavailable" > /dev/console
+            exit 0
+        fi
+        /usr/bin/bnix-shell >/var/log/bnix-shell.log 2>&1 &
+        echo $! > "$pidfile"
+        ;;
+    stop)
+        if [ -r "$pidfile" ]; then
+            kill "$(cat "$pidfile")" 2>/dev/null || true
+            rm -f "$pidfile"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        "$0" start
+        ;;
+esac
