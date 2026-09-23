@@ -9,6 +9,10 @@ task_t tasks[MAX_TASKS];
 int current_task = -1;
 bool multitasking_enabled = false;
 
+static bool tick_reached(uint32_t now, uint32_t deadline) {
+    return (int32_t)(now - deadline) >= 0;
+}
+
 static uint8_t task_stacks[MAX_TASKS][32768];
 
 void init_multitasking(void) {
@@ -58,7 +62,7 @@ uint32_t timer_handler_main(uint32_t current_esp) {
 
     if (multitasking_enabled && current_task >= 0 && current_task < MAX_TASKS) {
         for (int i = 0; i < MAX_TASKS; i++) {
-            if (tasks[i].state == TASK_SLEEPING && timer_ticks >= tasks[i].wake_time) {
+            if (tasks[i].state == TASK_SLEEPING && tick_reached(timer_ticks, tasks[i].wake_time)) {
                 tasks[i].state = TASK_RUNNING;
             }
         }
@@ -104,25 +108,34 @@ void exit_current_task(void) {
 }
 
 void init_timer(uint32_t frequency) {
-    current_frequency = frequency;
-    uint32_t divisor = 1193180 / frequency;
+    if (frequency == 0) frequency = 100;
+    uint32_t divisor = 1193180U / frequency;
+    if (divisor == 0) divisor = 1;
+    if (divisor > 65535U) divisor = 65535U;
+    current_frequency = 1193180U / divisor;
     outb(0x43, 0x36);
     outb(0x40, (uint8_t)(divisor & 0xFF));
     outb(0x40, (uint8_t)((divisor >> 8) & 0xFF));
 }
 
-uint32_t get_uptime_seconds(void) { return timer_ticks / current_frequency; }
+uint32_t get_uptime_seconds(void) {
+    return current_frequency ? timer_ticks / current_frequency : 0;
+}
 
 void sleep(uint32_t seconds) {
-    if (multitasking_enabled && current_task != -1) {
-        tasks[current_task].wake_time = timer_ticks + (seconds * current_frequency);
+    if (seconds == 0 || current_frequency == 0) return;
+    uint64_t requested_ticks = (uint64_t)seconds * current_frequency;
+    uint32_t wait = requested_ticks > 0x7FFFFFFFU
+        ? 0x7FFFFFFFU : (uint32_t)requested_ticks;
+
+    if (multitasking_enabled && current_task >= 0 && current_task < MAX_TASKS) {
+        tasks[current_task].wake_time = timer_ticks + wait;
         tasks[current_task].state = TASK_SLEEPING;
         while (tasks[current_task].state == TASK_SLEEPING) {
             asm volatile("hlt");
         }
     } else {
         uint32_t start = timer_ticks;
-        uint32_t wait = seconds * current_frequency;
-        while ((timer_ticks - start) < wait) { asm volatile("hlt"); }
+        while ((uint32_t)(timer_ticks - start) < wait) { asm volatile("hlt"); }
     }
 }
