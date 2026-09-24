@@ -51,3 +51,4 @@ jobs:
             build/linux-output/images/rootfs.ext4
             build/qemu-linux-serial.log
             build/qemu-linux-screen.ppm
+            run-b-nix.ps1
