@@ -22,7 +22,7 @@ typedef struct {
     uint8_t bpp;
 } vbe_info_t;
 
-void init_graphics(uint32_t* fb_addr, uint32_t w, uint32_t h, uint32_t p, uint8_t b);
+bool init_graphics(uint32_t* fb_addr, uint32_t w, uint32_t h, uint32_t p, uint8_t b);
 void draw_pixel(int x, int y, uint32_t color);
 uint32_t get_pixel(int x, int y);
 void swap_buffers(void);

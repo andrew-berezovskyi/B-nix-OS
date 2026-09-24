@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "io.h"
+#include "exceptions.h"
 
 idt_entry_t idt_entries[256];
 idt_ptr_t   idt_ptr;
@@ -33,6 +34,8 @@ void init_idt(void) {
     outb(0x21, 0xF8); 
     outb(0xA1, 0xEF); 
 
+    exceptions_install();
+
     idt_set_gate(32, (uint32_t)timer_handler, 0x08, 0x8E);
     idt_set_gate(33, (uint32_t)keyboard_handler, 0x08, 0x8E);
     idt_set_gate(44, (uint32_t)mouse_handler, 0x08, 0x8E);
@@ -42,6 +45,5 @@ void init_idt(void) {
     // ми змінимо цей прапорець на 0xEE, щоб програми мали право викликати це переривання.
     idt_set_gate(128, (uint32_t)syscall_handler, 0x08, 0x8E); 
 
-    idt_flush((uint32_t)&idt_ptr);
-    asm volatile("sti");
+    idt_flush((uint32_t)&idt_ptr);
 }

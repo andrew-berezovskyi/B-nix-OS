@@ -4,7 +4,10 @@
 #include "kheap.h"   
 #include "timer.h"   
 #include "elf.h"      
-#include "vmm.h"      
+#include "vmm.h"
+
+#define MAX_ELF_PROGRAM_HEADERS 64U
+#define MAX_ELF_SEGMENT_BYTES (64U * 1024U * 1024U)
 #include <stdint.h>
 
 extern void print(const char* str);
@@ -60,7 +63,17 @@ static int load_elf_and_run(const char* filename) {
         return -1;
     }
 
-    if (ehdr.e_phnum == 0 || ehdr.e_phentsize < sizeof(elf32_phdr_t)) {
+    if (ehdr.e_ident[4] != ELFCLASS32 || ehdr.e_ident[5] != ELFDATA2LSB ||
+        ehdr.e_type != ET_EXEC || ehdr.e_machine != EM_386 ||
+        ehdr.e_version != EV_CURRENT || ehdr.e_ehsize < sizeof(elf32_ehdr_t)) {
+        print("ELF Error: Unsupported executable format.\n");
+        sys_close(fd);
+        return -1;
+    }
+
+    if (ehdr.e_phnum == 0 || ehdr.e_phnum > MAX_ELF_PROGRAM_HEADERS ||
+        ehdr.e_phentsize < sizeof(elf32_phdr_t) ||
+        ehdr.e_phoff < sizeof(elf32_ehdr_t)) {
         print("ELF Error: Invalid program headers.\n");
         sys_close(fd);
         return -1;
@@ -81,6 +94,7 @@ static int load_elf_and_run(const char* filename) {
     }
 
     bool loaded_anything = false;
+    bool entry_covered = false;
     char scratch[64];
 
     uint32_t ph_skip = ehdr.e_phoff;
@@ -130,17 +144,28 @@ static int load_elf_and_run(const char* filename) {
         if (phdr.p_type != PT_LOAD || phdr.p_memsz == 0) {
             continue;
         }
-        if (phdr.p_filesz > phdr.p_memsz) {
+        uint32_t offset_in_page = phdr.p_vaddr & 0xFFFU;
+        if (phdr.p_filesz > phdr.p_memsz ||
+            phdr.p_memsz > 0xFFFFFFFFU - offset_in_page ||
+            phdr.p_vaddr > 0xFFFFFFFFU - phdr.p_memsz) {
             print("ELF Error: Corrupted segment sizes.\n");
             return -1;
         }
 
-        loaded_anything = true;
-
-        uint32_t offset_in_page = phdr.p_vaddr & 0xFFFU;
         uint32_t total_mem = phdr.p_memsz + offset_in_page;
+        if (total_mem > MAX_ELF_SEGMENT_BYTES) {
+            print("ELF Error: Segment exceeds loader limits.\n");
+            return -1;
+        }
         uint32_t pages_needed = (total_mem + 4095U) / 4096U;
+        if (pages_needed == 0 || pages_needed > MAX_ELF_SEGMENT_BYTES / 4096U) {
+            print("ELF Error: Invalid segment page count.\n");
+            return -1;
+        }
         uint32_t alloc_size = pages_needed * 4096U;
+        loaded_anything = true;
+        if (ehdr.e_entry >= phdr.p_vaddr &&
+            ehdr.e_entry < phdr.p_vaddr + phdr.p_memsz) entry_covered = true;
 
         uint32_t raw = (uint32_t)kmalloc(alloc_size + 4095U);
         if (raw == 0) {
@@ -203,13 +228,13 @@ static int load_elf_and_run(const char* filename) {
                 page_directory,
                 virt_base + (page * 4096U),
                 segment_phys_base + (page * 4096U),
-                PTE_USER | PTE_RW | PTE_PRESENT
+                PTE_USER | PTE_PRESENT | ((phdr.p_flags & PF_W) ? PTE_RW : 0)
             );
         }
     }
 
-    if (!loaded_anything) {
-        print("ELF Error: No loadable segments.\n");
+    if (!loaded_anything || !entry_covered) {
+        print("ELF Error: Entry point is outside loadable segments.\n");
         return -1;
     }
 

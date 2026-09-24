@@ -1,0 +1,9 @@
+build/
+iso/
+*.o
+*.bin
+*.iso
+*.img
+*.log
+.vscode/
+.DS_Store

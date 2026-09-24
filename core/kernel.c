@@ -16,6 +16,7 @@
 #include "keyboard.h"
 #include "timer.h"
 #include "desktop.h"
+#include "serial.h"
 
 uint8_t* main_font_data = NULL;
 uint8_t* bg_image_data = NULL; uint32_t bg_image_size = 0;
@@ -183,16 +184,35 @@ void task_blinker_main(void) {
 // ЯДРО
 // ==============================================================================
 void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
-    init_gdt(); 
+    serial_init();
+    serial_write("[BNIX] boot start\n");
+    init_gdt();
+    serial_write("[BNIX] gdt ok\n"); 
     init_idt();
-    init_kheap(0x1000000, 16 * 1024 * 1024);
-    init_vmm();
+    serial_write("[BNIX] idt ok\n");
+    if (magic == 0x2BADB002 && (mbd->flags & 1U)) {
+        init_pmm(mbd->mem_upper + 1024U);
+    } else {
+        init_pmm(64U * 1024U);
+    }
+    serial_write("[BNIX] pmm ok\n");
+    init_kheap(0x1000000, 32 * 1024 * 1024);
+    serial_write("[BNIX] heap ok\n");
+    if (!init_vmm()) {
+        serial_write("[BNIX:PANIC] failed to initialize virtual memory\n");
+        for (;;) asm volatile("hlt");
+    }
+    serial_write("[BNIX] vmm ok\n");
 
     if (magic == 0x2BADB002 && (mbd->flags & (1 << 12))) {
         uint32_t fb_addr = (uint32_t)(mbd->framebuffer_addr & 0xFFFFFFFF); 
         screen_w = mbd->framebuffer_width; 
         screen_h = mbd->framebuffer_height; 
-        init_graphics((uint32_t*)fb_addr, screen_w, screen_h, mbd->framebuffer_pitch, mbd->framebuffer_bpp);
+        if (!init_graphics((uint32_t*)fb_addr, screen_w, screen_h, mbd->framebuffer_pitch, mbd->framebuffer_bpp)) {
+            serial_write("[BNIX:PANIC] unsupported framebuffer or insufficient graphics memory\n");
+            for (;;) asm volatile("hlt");
+        }
+        mouse_set_bounds(screen_w, screen_h);
         
         if (mbd->flags & (1 << 3)) {
             multiboot_module_t* mod = (multiboot_module_t*)mbd->mods_addr;
@@ -205,11 +225,19 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
         }
     } 
 
+    serial_write("[BNIX] graphics/modules ok\n");
     init_keyboard(); 
+    serial_write("[BNIX] keyboard ok\n");
     init_mouse(); 
-    init_timer(50); 
-    init_shell(); 
+    serial_write("[BNIX] mouse ok\n");
+    init_timer(50);
+    serial_write("[BNIX] timer configured\n");
+    asm volatile("sti");
+    serial_write("[BNIX] interrupts enabled\n");
+    init_shell();
+    serial_write("[BNIX] shell ok\n");
     init_fs();
+    serial_write("[BNIX] fs ok\n");
     
     // 🔥 ОНОВЛЕНО: Тепер ми завжди перезаписуємо calc.bin, якщо він є у модулях GRUB
     if (calc_app_data && calc_app_size > 0) {
@@ -224,12 +252,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbd) {
     
     if (bg_image_data) cache_background_image(bg_image_data, bg_image_size);
     if (icon_image_data) cache_icon_image(icon_image_data, icon_image_size);
+    serial_write("[BNIX] image caches ok\n");
 
     desktop_init(screen_w, screen_h);
+    serial_write("[BNIX] desktop ok\n");
 
     init_multitasking();
     create_task(task_gui_main, NULL);      // 🔥 Додали NULL
     create_task(task_blinker_main, NULL);
+    serial_write("[BNIX] BNIX_BOOT_OK\n");
 
     while (1) {
         asm volatile("hlt");

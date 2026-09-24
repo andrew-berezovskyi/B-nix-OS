@@ -5,15 +5,22 @@
 #include "ata.h"
 #include "kheap.h"
 
-#define DESKTOP_TOP_BAR_H   32
-#define DESKTOP_DOCK_W      60
-#define DESKTOP_TITLE_H     32
+#define DESKTOP_TOP_BAR_H   34
+#define DESKTOP_DOCK_W      360
+#define DESKTOP_DOCK_H      70
+#define DESKTOP_DOCK_MARGIN 18
+#define DESKTOP_TITLE_H     36
 
 window_t windows[MAX_WINDOWS];
 int focused_window = -1; 
 bool is_dragging = false;
 int dragging_window = -1;
 int drag_off_x = 0; int drag_off_y = 0;
+int dock_hover_index = -1;
+static bool window_maximized[MAX_WINDOWS];
+static int normal_x[MAX_WINDOWS], normal_y[MAX_WINDOWS];
+static int normal_w[MAX_WINDOWS], normal_h[MAX_WINDOWS];
+static size_t window_buffer_capacity[MAX_WINDOWS];
 
 extern size_t strlen(const char* str);
 static void custom_strcpy(char* dst, const char* src) { while (*src) *dst++ = *src++; *dst = '\0'; }
@@ -80,13 +87,13 @@ void app_term_draw(int x, int y, int w, int h) {
     if (main_font_data) {
         for (int r = 0; r < n_show; r++) {
             int idx = (start_idx + r) % TERM_LINE_CAP;
-            draw_ttf_string(x + 10, cy + 14, main_font_data, term_lines[idx], 13.0f, 0xD0D0D0); cy += line_h;
+            draw_ttf_string(x + 14, cy + 14, main_font_data, term_lines[idx], 13.0f, 0xD7E2F0); cy += line_h;
         }
         char prompt_line[SHELL_BUFFER_SIZE + 16]; int pp = 0; const char* pr = "B-nix> ";
         while (pr[0] && pp < (int)sizeof(prompt_line) - 2) prompt_line[pp++] = *pr++;
         for (int i = 0; i < buffer_index && pp < (int)sizeof(prompt_line) - 2; i++) prompt_line[pp++] = command_buffer[i];
         prompt_line[pp] = '\0';
-        draw_ttf_string(x + 10, cy + 14, main_font_data, prompt_line, 13.0f, 0x88FF88);
+        draw_ttf_string(x + 14, cy + 14, main_font_data, prompt_line, 13.0f, 0x78D6B0);
     }
 }
 void app_term_key(char c) { shell_handle_keypress(c); }
@@ -98,16 +105,23 @@ static char selected_filename[32] = "";
 static bool context_menu_open = false; static int context_x = 0; static int context_y = 0;
 static char viewer_content[4096]; 
 
+static int fm_sidebar_width(int window_width) {
+    if (window_width < 480) return 112;
+    if (window_width < 640) return 136;
+    return 168;
+}
+
 void app_fm_draw(int x, int y, int w, int h) {
-    int left_w = 168;
-    draw_filled_rect(x, y, left_w, h, 0x2B2B2B);
-    draw_filled_rect(x + left_w, y, w - left_w, h, 0xECECEC);
+    int left_w = fm_sidebar_width(w);
+    draw_filled_rect(x, y, left_w, h, 0xE8EDF5);
+    draw_filled_rect(x + left_w, y, w - left_w, h, 0xF8FAFD);
+    draw_filled_rect(x + left_w - 1, y, 1, h, 0xD4DBE5);
 
     if (main_font_data) {
         for (int i = 0; i < 4; i++) {
             int ly = y + 12 + i * 28;
-            if (i == fm_nav_sel) draw_filled_rect(x + 4, ly - 4, left_w - 8, 26, 0x3678C4);
-            uint32_t tc = (i == fm_nav_sel) ? 0xFFFFFF : 0xB0B0B0;
+            if (i == fm_nav_sel) draw_rounded_rect(x + 8, ly - 5, left_w - 16, 27, 7, 0xCFE1FF);
+            uint32_t tc = (i == fm_nav_sel) ? 0x2467C8 : 0x526176;
             draw_ttf_string(x + 12, ly + 14, main_font_data, fm_nav_paths[i], 14.0f, tc);
         }
     }
@@ -120,18 +134,19 @@ void app_fm_draw(int x, int y, int w, int h) {
 
     for (int i = 0; i < fm_file_count; i++) {
         cached_file_t* entry = &fm_file_cache[i];
-        if (custom_strcmp(selected_filename, entry->name) == 0) draw_filled_rect(fx - 4, fy - 4, 84, 88, 0xD0E8FF);
+        if (custom_strcmp(selected_filename, entry->name) == 0) draw_rounded_rect(fx - 6, fy - 6, 88, 92, 9, 0xDCEAFF);
         if (entry->type == FS_TYPE_DIR) draw_icon_folder(fx, fy); else draw_icon_file(fx + 4, fy - 8); 
-        if (main_font_data) draw_ttf_string(fx - 4, fy + 56, main_font_data, entry->name, 11.0f, 0x222222);
+        if (main_font_data) draw_ttf_string(fx - 4, fy + 56, main_font_data, entry->name, 11.0f, 0x263449);
         col++; if (col >= max_cols) { col = 0; fx = gx; fy += 100; } else fx += 92;
     }
 
     if (context_menu_open) {
-        draw_filled_rect(context_x, context_y, 180, 84, 0x111111); draw_rect_outline(context_x, context_y, 180, 84, 0x4488FF);
+        draw_rounded_rect(context_x + 3, context_y + 4, 180, 84, 9, 0x273244);
+        draw_rounded_rect(context_x, context_y, 180, 84, 9, 0xF8FAFD); draw_rect_outline(context_x, context_y, 180, 84, 0xC7D0DD);
         if (main_font_data) {
-            draw_ttf_string(context_x + 8, context_y + 14, main_font_data, "New Folder", 12.0f, 0xCFE8FF);
-            draw_ttf_string(context_x + 8, context_y + 38, main_font_data, "New Text File", 12.0f, 0xCFE8FF);
-            draw_ttf_string(context_x + 8, context_y + 62, main_font_data, "Delete (WIP)", 12.0f, (selected_filename[0] != '\0') ? 0xFF8888 : 0x666666);
+            draw_ttf_string(context_x + 12, context_y + 18, main_font_data, "New Folder", 12.0f, 0x263449);
+            draw_ttf_string(context_x + 12, context_y + 43, main_font_data, "New Text File", 12.0f, 0x263449);
+            draw_ttf_string(context_x + 12, context_y + 68, main_font_data, "Delete (WIP)", 12.0f, (selected_filename[0] != '\0') ? 0xD83A52 : 0xA1AAB8);
         }
     }
 }
@@ -150,7 +165,8 @@ void app_fm_click(int mx, int my, bool right_click) {
         context_menu_open = false; windows[1].is_dirty = true; return;
     }
 
-    int left_w = 168; int inner_y = DESKTOP_TITLE_H;
+    int left_w = fm_sidebar_width(windows[win_idx].width);
+    int inner_y = DESKTOP_TITLE_H;
     if (local_mx >= 0 && local_mx < left_w) {
         for (int i = 0; i < FM_NAV_COUNT; i++) {
             int ly = inner_y + 12 + i * 28;
@@ -188,52 +204,171 @@ void app_fm_click(int mx, int my, bool right_click) {
 }
 
 void app_viewer_draw(int x, int y, int w, int h) {
-    if (main_font_data) draw_ttf_string(x + 12, y + 16, main_font_data, viewer_content, 13.0f, 0xD0D0D0);
+    draw_filled_rect(x, y, w, h, 0xF8FAFD);
+    if (main_font_data) draw_ttf_string(x + 18, y + 26, main_font_data, viewer_content, 13.0f, 0x263449);
+}
+
+void app_about_draw(int x, int y, int w, int h) {
+    draw_filled_rect(x, y, w, h, 0xF8FAFD);
+    draw_filled_circle(x + w / 2, y + 68, 34, 0x6EA8FF);
+    if (!main_font_data) return;
+    draw_ttf_string(x + w / 2 - 11, y + 80, main_font_data, "B", 28.0f, 0xFFFFFF);
+    const char* name = "B-nix OS";
+    int nw = measure_ttf_text_width(main_font_data, name, 24.0f);
+    draw_ttf_string(x + (w - nw) / 2, y + 132, main_font_data, name, 24.0f, 0x1E293B);
+    const char* version = "Aurora Preview 0.2";
+    int vw = measure_ttf_text_width(main_font_data, version, 14.0f);
+    draw_ttf_string(x + (w - vw) / 2, y + 158, main_font_data, version, 14.0f, 0x526176);
+    draw_rounded_rect(x + 42, y + 184, w - 84, 86, 12, 0xE8EEF7);
+    draw_ttf_string(x + 60, y + 210, main_font_data, "32-bit x86 kernel", 14.0f, 0x334155);
+    draw_ttf_string(x + 60, y + 234, main_font_data, "QEMU reference platform", 14.0f, 0x334155);
+    draw_ttf_string(x + 60, y + 258, main_font_data, "Built with a freestanding C runtime", 14.0f, 0x334155);
+}
+
+void app_settings_draw(int x, int y, int w, int h) {
+    draw_filled_rect(x, y, 150, h, 0xE8EDF5);
+    draw_filled_rect(x + 149, y, 1, h, 0xD2DAE5);
+    draw_filled_rect(x + 150, y, w - 150, h, 0xF8FAFD);
+    if (!main_font_data) return;
+    draw_ttf_string(x + 18, y + 34, main_font_data, "Settings", 20.0f, 0x1E293B);
+    draw_rounded_rect(x + 10, y + 54, 130, 32, 8, 0xCFE1FF);
+    draw_ttf_string(x + 22, y + 76, main_font_data, "Overview", 14.0f, 0x2467C8);
+    draw_ttf_string(x + 22, y + 112, main_font_data, "Appearance", 14.0f, 0x526176);
+    draw_ttf_string(x + 22, y + 146, main_font_data, "Storage", 14.0f, 0x526176);
+
+    int content_x = x + 176;
+    draw_ttf_string(content_x, y + 42, main_font_data, "System overview", 21.0f, 0x1E293B);
+    draw_rounded_rect(content_x, y + 62, w - 202, 78, 12, 0xE8EEF7);
+    draw_ttf_string(content_x + 18, y + 91, main_font_data, "Device", 13.0f, 0x718096);
+    draw_ttf_string(content_x + 18, y + 119, main_font_data, "B-nix Virtual Machine", 15.0f, 0x263449);
+    draw_rounded_rect(content_x, y + 154, w - 202, 78, 12, 0xE8EEF7);
+    draw_ttf_string(content_x + 18, y + 183, main_font_data, "Desktop theme", 13.0f, 0x718096);
+    draw_ttf_string(content_x + 18, y + 211, main_font_data, "Aurora Blue", 15.0f, 0x263449);
 }
 
 // ==============================================================================
 // СПРАВЖНІЙ КОМПОЗИТНИЙ WINDOW MANAGER
 // ==============================================================================
 void draw_kali_window_frame(int x, int y, int ww, int wh, bool active, const char* title) {
-    uint32_t border = active ? 0x00A0C8 : 0x3A3A3A;
-    draw_filled_rect(x, y, ww, wh, border); 
-    draw_filled_rect(x + 1, y + 1, ww - 2, wh - 2, 0x1A1A1A); 
-    
-    uint32_t title_bg = active ? 0x252A30 : 0x1E1E1E;
-    draw_filled_rect(x + 1, y + 1, ww - 2, DESKTOP_TITLE_H - 1, title_bg);
-    if (active) draw_filled_rect(x + 1, y + 1, ww - 2, 3, 0x00B4D8); 
-    
-    if (main_font_data) draw_ttf_string(x + 10, y + 22, main_font_data, title, 14.0f, 0xE0E0E0);
-    
-    int cl_x = x + ww - 34; 
-    draw_filled_rect(cl_x, y + 4, 28, 24, 0xC03030);
-    draw_rect_outline(cl_x, y + 4, 28, 24, 0xA02020); 
-    if (main_font_data) draw_ttf_string(cl_x + 9, y + 21, main_font_data, "X", 13.0f, 0xFFFFFF);
+    uint32_t border = active ? 0x7FAEFF : 0x4B5565;
+    draw_rounded_rect(x, y, ww, wh, 10, border);
+    draw_rounded_rect(x + 1, y + 1, ww - 2, wh - 2, 9, 0x121722);
+    draw_filled_rect(x + 1, y + DESKTOP_TITLE_H, ww - 2, wh - DESKTOP_TITLE_H - 1, 0x121722);
+
+    uint32_t title_bg = active ? 0xEEF2F7 : 0xD8DEE7;
+    draw_rounded_rect(x + 1, y + 1, ww - 2, DESKTOP_TITLE_H, 9, title_bg);
+    draw_filled_rect(x + 1, y + DESKTOP_TITLE_H - 9, ww - 2, 9, title_bg);
+    draw_filled_circle(x + 16, y + 18, 6, 0xFF605C);
+    draw_filled_circle(x + 36, y + 18, 6, 0xFFBD44);
+    draw_filled_circle(x + 56, y + 18, 6, 0x28C840);
+    draw_filled_rect(x + 13, y + 17, 7, 2, 0x9E3534);
+    draw_filled_rect(x + 15, y + 15, 2, 6, 0x9E3534);
+    draw_filled_rect(x + 33, y + 17, 7, 2, 0x9B711F);
+    draw_rect_outline(x + 53, y + 15, 6, 6, 0x167A2B);
+
+    if (main_font_data) {
+        int tw = measure_ttf_text_width(main_font_data, title, 14.0f);
+        draw_ttf_string(x + (ww - tw) / 2, y + 24, main_font_data, title, 14.0f, 0x253044);
+    }
+}
+
+static int clamp_window_extent(int preferred, int available, int floor) {
+    if (available < floor) return available;
+    if (preferred < floor) return floor;
+    return preferred < available ? preferred : available;
+}
+
+static int centered_window_x(int width) {
+    int x = ((int)d_screen_w - width) / 2;
+    return x > 0 ? x : 0;
 }
 
 void wm_init(void) {
-    for(int i=0; i<MAX_WINDOWS; i++) {
+    for (int i = 0; i < MAX_WINDOWS; i++) {
         windows[i].is_open = false;
         windows[i].is_dirty = true;
         windows[i].buffer = NULL;
+        window_maximized[i] = false;
+        window_buffer_capacity[i] = 0;
     }
 
-    windows[0].is_open = false; windows[0].x = 72; windows[0].y = 52; windows[0].width = 540; windows[0].height = 360;
-    custom_strcpy(windows[0].title, "Terminal"); windows[0].draw_content = app_term_draw;
-    windows[0].on_keypress = app_term_key; windows[0].on_click = NULL;
-    windows[0].buffer = kmalloc(windows[0].width * windows[0].height * 4);
+    int margin = d_screen_w >= 800 ? 32 : 12;
+    int usable_w = (int)d_screen_w - margin * 2;
+    int usable_h = (int)d_screen_h - DESKTOP_TOP_BAR_H -
+                   DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - 28;
+    if (usable_w < 1) usable_w = 1;
+    if (usable_h < 1) usable_h = 1;
+    int top_y = DESKTOP_TOP_BAR_H + 18;
 
-    windows[1].is_open = false; windows[1].x = 300; windows[1].y = 200; windows[1].width = 600; windows[1].height = 400;
-    custom_strcpy(windows[1].title, "Files"); windows[1].draw_content = app_fm_draw;
-    windows[1].on_keypress = NULL; windows[1].on_click = app_fm_click;
-    windows[1].buffer = kmalloc(windows[1].width * windows[1].height * 4);
-    
-    windows[2].is_open = false; windows[2].x = 400; windows[2].y = 150; windows[2].width = 450; windows[2].height = 300;
-    custom_strcpy(windows[2].title, "Text Viewer"); windows[2].draw_content = app_viewer_draw;
-    windows[2].on_keypress = NULL; windows[2].on_click = NULL;
-    windows[2].buffer = kmalloc(windows[2].width * windows[2].height * 4);
+    windows[0].is_open = false;
+    windows[0].width = clamp_window_extent(620, usable_w, 300);
+    windows[0].height = clamp_window_extent(390, usable_h, 220);
+    windows[0].x = centered_window_x(windows[0].width);
+    windows[0].y = top_y;
+    custom_strcpy(windows[0].title, "Terminal");
+    windows[0].draw_content = app_term_draw;
+    windows[0].on_keypress = app_term_key;
+    windows[0].on_click = NULL;
+    windows[0].buffer = kmalloc((size_t)windows[0].width * windows[0].height * 4u);
 
-    focused_window = -1; fm_file_count = -1;
+    windows[1].is_open = false;
+    windows[1].width = clamp_window_extent(760, usable_w, 360);
+    windows[1].height = clamp_window_extent(470, usable_h, 260);
+    windows[1].x = centered_window_x(windows[1].width);
+    windows[1].y = top_y;
+    custom_strcpy(windows[1].title, "Files");
+    windows[1].draw_content = app_fm_draw;
+    windows[1].on_keypress = NULL;
+    windows[1].on_click = app_fm_click;
+    windows[1].buffer = kmalloc((size_t)windows[1].width * windows[1].height * 4u);
+
+    windows[2].is_open = false;
+    windows[2].width = clamp_window_extent(560, usable_w, 300);
+    windows[2].height = clamp_window_extent(360, usable_h, 220);
+    windows[2].x = centered_window_x(windows[2].width);
+    windows[2].y = top_y + (usable_h > 400 ? 28 : 0);
+    custom_strcpy(windows[2].title, "Text Viewer");
+    windows[2].draw_content = app_viewer_draw;
+    windows[2].on_keypress = NULL;
+    windows[2].on_click = NULL;
+    windows[2].buffer = kmalloc((size_t)windows[2].width * windows[2].height * 4u);
+
+    windows[3].is_open = false;
+    windows[3].width = clamp_window_extent(460, usable_w, 300);
+    windows[3].height = clamp_window_extent(350, usable_h, 240);
+    windows[3].x = centered_window_x(windows[3].width);
+    windows[3].y = top_y;
+    custom_strcpy(windows[3].title, "About B-nix");
+    windows[3].draw_content = app_about_draw;
+    windows[3].on_keypress = NULL;
+    windows[3].on_click = NULL;
+    windows[3].buffer = kmalloc((size_t)windows[3].width * windows[3].height * 4u);
+
+    windows[4].is_open = false;
+    windows[4].width = clamp_window_extent(680, usable_w, 360);
+    windows[4].height = clamp_window_extent(430, usable_h, 280);
+    windows[4].x = centered_window_x(windows[4].width);
+    windows[4].y = top_y;
+    custom_strcpy(windows[4].title, "System Settings");
+    windows[4].draw_content = app_settings_draw;
+    windows[4].on_keypress = NULL;
+    windows[4].on_click = NULL;
+    windows[4].buffer = kmalloc((size_t)windows[4].width * windows[4].height * 4u);
+
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (windows[i].buffer)
+            window_buffer_capacity[i] = (size_t)windows[i].width * windows[i].height * 4u;
+    }
+
+    focused_window = -1;
+    fm_file_count = -1;
+}
+
+static void wm_draw_window_shadow(int index) {
+    if (index < 0 || index >= MAX_WINDOWS || window_maximized[index]) return;
+    window_t* win = &windows[index];
+    draw_rounded_rect(win->x + 6, win->y + 8, win->width, win->height, 11, 0x101522);
+    draw_rounded_rect(win->x + 3, win->y + 4, win->width, win->height, 11, 0x182033);
 }
 
 void wm_draw_windows(void) {
@@ -255,6 +390,7 @@ void wm_draw_windows(void) {
     // 2. Композиція (Швидке накладання готових вікон на екран)
     for(int i=0; i<MAX_WINDOWS; i++) {
         if(windows[i].is_open && i != focused_window) {
+            wm_draw_window_shadow(i);
             draw_buffer_to_screen(windows[i].buffer, windows[i].width, windows[i].height, windows[i].x, windows[i].y);
         }
     }
@@ -262,6 +398,7 @@ void wm_draw_windows(void) {
     // Активне вікно малюється останнім
     if (focused_window >= 0 && windows[focused_window].is_open) {
         int i = focused_window;
+        wm_draw_window_shadow(i);
         draw_buffer_to_screen(windows[i].buffer, windows[i].width, windows[i].height, windows[i].x, windows[i].y);
     }
 }
@@ -273,12 +410,71 @@ void wm_handle_keypress(char c) {
     }
 }
 
+static bool wm_set_window_geometry(int index, int x, int y, int width, int height) {
+    if (index < 0 || index >= MAX_WINDOWS || width <= 0 || height <= 0) return false;
+    size_t required = (size_t)width * (size_t)height * 4u;
+    if (required > window_buffer_capacity[index]) {
+        uint32_t* larger = (uint32_t*)kmalloc(required);
+        if (!larger) return false;
+        if (windows[index].buffer) kfree(windows[index].buffer);
+        windows[index].buffer = larger;
+        window_buffer_capacity[index] = required;
+    }
+    windows[index].x = x;
+    windows[index].y = y;
+    windows[index].width = width;
+    windows[index].height = height;
+    windows[index].is_dirty = true;
+    return true;
+}
+
+static void wm_toggle_maximize(int index) {
+    if (index < 0 || index >= MAX_WINDOWS) return;
+    if (!window_maximized[index]) {
+        int margin = d_screen_w >= 800 ? 16 : 6;
+        int x = margin;
+        int y = DESKTOP_TOP_BAR_H + 8;
+        int width = (int)d_screen_w - margin * 2;
+        int height = (int)d_screen_h - y - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - 8;
+        if (width < 1 || height < DESKTOP_TITLE_H + 1) return;
+        normal_x[index] = windows[index].x;
+        normal_y[index] = windows[index].y;
+        normal_w[index] = windows[index].width;
+        normal_h[index] = windows[index].height;
+        if (wm_set_window_geometry(index, x, y, width, height))
+            window_maximized[index] = true;
+    } else if (wm_set_window_geometry(index, normal_x[index], normal_y[index],
+                                      normal_w[index], normal_h[index])) {
+        window_maximized[index] = false;
+    }
+}
+
+static void wm_update_dock_hover(int mx, int my) {
+    int dock_x = ((int)d_screen_w - DESKTOP_DOCK_W) / 2;
+    int dock_y = (int)d_screen_h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN;
+    dock_hover_index = -1;
+    if (mx < dock_x + 12 || mx >= dock_x + DESKTOP_DOCK_W - 12 ||
+        my < dock_y - 10 || my >= dock_y + DESKTOP_DOCK_H) return;
+
+    int rel_x = mx - (dock_x + 18);
+    int index = rel_x >= 0 ? rel_x / 60 : -1;
+    if (index >= 0 && index < 5) dock_hover_index = index;
+}
+
 void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, bool j_r) {
+    wm_update_dock_hover(mx, my);
     if (is_dragging && dragging_window != -1) {
         if (left_now) {
             windows[dragging_window].x = mx - drag_off_x;
             windows[dragging_window].y = my - drag_off_y;
-            if(windows[dragging_window].y < DESKTOP_TOP_BAR_H) windows[dragging_window].y = DESKTOP_TOP_BAR_H;
+            int max_x = (int)d_screen_w - windows[dragging_window].width;
+            int max_y = (int)d_screen_h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN - windows[dragging_window].height - 6;
+            if (max_x < 0) max_x = 0;
+            if (max_y < DESKTOP_TOP_BAR_H) max_y = DESKTOP_TOP_BAR_H;
+            if (windows[dragging_window].x < 0) windows[dragging_window].x = 0;
+            if (windows[dragging_window].x > max_x) windows[dragging_window].x = max_x;
+            if (windows[dragging_window].y < DESKTOP_TOP_BAR_H) windows[dragging_window].y = DESKTOP_TOP_BAR_H;
+            if (windows[dragging_window].y > max_y) windows[dragging_window].y = max_y;
         } else {
             is_dragging = false; dragging_window = -1;
         }
@@ -287,10 +483,17 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
 
     if (!j_c && !j_r) return;
 
-    if (mx < DESKTOP_DOCK_W && my >= DESKTOP_TOP_BAR_H) {
-        int di = (my - DESKTOP_TOP_BAR_H) / 58;
-        if (di == 0) { windows[0].is_open = true; focused_window = 0; windows[0].is_dirty = true; }
-        if (di == 1) { windows[1].is_open = true; focused_window = 1; windows[1].is_dirty = true; }
+    int dock_x = ((int)d_screen_w - DESKTOP_DOCK_W) / 2;
+    int dock_y = (int)d_screen_h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN;
+    if (my >= dock_y && my < dock_y + DESKTOP_DOCK_H &&
+        mx >= dock_x && mx < dock_x + DESKTOP_DOCK_W) {
+        int rel_x = mx - (dock_x + 18);
+        int di = rel_x >= 0 ? rel_x / 60 : -1;
+        if (di == 0 && windows[0].buffer) { windows[0].is_open = true; focused_window = 0; windows[0].is_dirty = true; }
+        if (di == 1 && windows[1].buffer) { windows[1].is_open = true; focused_window = 1; windows[1].is_dirty = true; }
+        if (di == 2 && windows[2].is_open && windows[2].buffer) { focused_window = 2; windows[2].is_dirty = true; }
+        if (di == 3 && windows[3].buffer) { windows[3].is_open = true; focused_window = 3; windows[3].is_dirty = true; }
+        if (di == 4 && windows[4].buffer) { windows[4].is_open = true; focused_window = 4; windows[4].is_dirty = true; }
         return;
     }
 
@@ -316,14 +519,31 @@ void wm_process_mouse(int mx, int my, bool left_now, bool right_now, bool j_c, b
             windows[focused_window].is_dirty = true;
         }
 
-        int wx = windows[win_hit].x; int wy = windows[win_hit].y; int ww = windows[win_hit].width;
+        int wx = windows[win_hit].x;
+        int wy = windows[win_hit].y;
 
-        if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H && mx >= wx + ww - 34 && mx <= wx + ww) {
-            windows[win_hit].is_open = false; focused_window = -1; windows[win_hit].is_dirty = true; return;
+        if (j_c && my >= wy + 7 && my <= wy + 29 && mx >= wx + 7 && mx <= wx + 27) {
+            windows[win_hit].is_open = false;
+            focused_window = -1;
+            windows[win_hit].is_dirty = true;
+            return;
         }
-        if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H) {
-            is_dragging = true; dragging_window = win_hit;
-            drag_off_x = mx - wx; drag_off_y = my - wy; return;
+        if (j_c && my >= wy + 7 && my <= wy + 29 && mx >= wx + 27 && mx <= wx + 47) {
+            windows[win_hit].is_open = false;
+            focused_window = -1;
+            windows[win_hit].is_dirty = true;
+            return;
+        }
+        if (j_c && my >= wy + 7 && my <= wy + 29 && mx >= wx + 47 && mx <= wx + 67) {
+            wm_toggle_maximize(win_hit);
+            return;
+        }
+        if (j_c && my >= wy && my <= wy + DESKTOP_TITLE_H && !window_maximized[win_hit]) {
+            is_dragging = true;
+            dragging_window = win_hit;
+            drag_off_x = mx - wx;
+            drag_off_y = my - wy;
+            return;
         }
         if (windows[win_hit].on_click) windows[win_hit].on_click(mx, my, j_r);
     } else {

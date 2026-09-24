@@ -1,0 +1,13 @@
+#!/bin/sh
+
+case "${1:-start}" in
+    start)
+        echo "[BNIX-LINUX] userspace ready" > /dev/console
+        if ip -4 addr show dev eth0 2>/dev/null | grep -q 'inet '; then
+            echo "[BNIX-LINUX] network ready" > /dev/console
+        else
+            echo "[BNIX-LINUX] network unavailable" > /dev/console
+        fi
+        echo "[BNIX-LINUX] BNIX_LINUX_BOOT_OK" > /dev/console
+        ;;
+esac

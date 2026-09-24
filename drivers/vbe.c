@@ -73,23 +73,38 @@ void* stbi_realloc_sized(void* ptr, size_t old_size, size_t new_size) {
 // 🔥 COMPOSITOR RENDER TARGETS
 // ==============================================================================
 static vbe_info_t vbe;
-static uint32_t backbuffer[1280 * 720];
-static uint32_t frontbuffer[1280 * 720]; 
+static uint32_t* backbuffer = NULL;
+static uint32_t* frontbuffer = NULL; 
 
 // Поточна ціль малювання (може бути екраном або буфером вікна)
 static uint32_t* current_rt = NULL;
 static uint32_t rt_w = 0;
 static uint32_t rt_h = 0;
 
-void init_graphics(uint32_t* fb_addr, uint32_t w, uint32_t h, uint32_t p, uint8_t b) {
-    vbe.framebuffer = fb_addr; vbe.width = w; vbe.height = h; vbe.pitch = p; vbe.bpp = b;
-    for(int i=0; i < 1280 * 720; i++) {
-        backbuffer[i] = 0;
-        frontbuffer[i] = 0;
+bool init_graphics(uint32_t* fb_addr, uint32_t w, uint32_t h, uint32_t p, uint8_t b) {
+    if (!fb_addr || w == 0 || h == 0 || b != 32 || p < w * sizeof(uint32_t)) return false;
+    if (w > 4096 || h > 2160 || w > ((size_t)-1 / h / sizeof(uint32_t))) return false;
+
+    size_t pixels = (size_t)w * h;
+    backbuffer = (uint32_t*)kcalloc(pixels, sizeof(uint32_t));
+    frontbuffer = (uint32_t*)kcalloc(pixels, sizeof(uint32_t));
+    if (!backbuffer || !frontbuffer) {
+        if (backbuffer) kfree(backbuffer);
+        if (frontbuffer) kfree(frontbuffer);
+        backbuffer = NULL;
+        frontbuffer = NULL;
+        return false;
     }
+
+    vbe.framebuffer = fb_addr;
+    vbe.width = w;
+    vbe.height = h;
+    vbe.pitch = p;
+    vbe.bpp = b;
     current_rt = backbuffer;
     rt_w = w;
     rt_h = h;
+    return true;
 }
 
 void set_render_target(uint32_t* target, int w, int h) {
@@ -156,13 +171,13 @@ void draw_rect_outline(int x, int y, int w, int h, uint32_t color) {
 
 void swap_buffers(void) {
     uint32_t* src = backbuffer;
-    uint32_t* dst = (uint32_t*)vbe.framebuffer;
     uint32_t* shadow = frontbuffer;
     uint32_t width = vbe.width;
     uint32_t height = vbe.height;
 
     for (uint32_t y = 0; y < height; y++) {
         uint32_t offset = y * width;
+        uint32_t* framebuffer_row = (uint32_t*)((uint8_t*)vbe.framebuffer + y * vbe.pitch);
         uint32_t min_x = width;
         uint32_t max_x = 0;
         for (uint32_t x = 0; x < width; x++) {
@@ -173,7 +188,7 @@ void swap_buffers(void) {
         if (min_x < width) {
             uint32_t count = max_x - min_x + 1;
             uint32_t start = offset + min_x;
-            uint32_t* dst_ptr = dst + start;
+            uint32_t* dst_ptr = framebuffer_row + min_x;
             uint32_t* src_ptr = src + start;
             uint32_t* shd_ptr = shadow + start;
             for(uint32_t i = 0; i < count; i++) {
@@ -387,35 +402,123 @@ void draw_cached_icon_centered(int center_x, int center_y) {
     draw_cached_icon_at(icon_cache, icon_cache_w, icon_cache_h, center_x - (icon_cache_w / 2), center_y - (icon_cache_h / 2));
 }
 
+static uint32_t sample_background_bilinear(const unsigned char* pixels, int src_w, int src_h,
+                                               uint32_t sx_fp, uint32_t sy_fp) {
+    uint32_t sx = sx_fp >> 16, sy = sy_fp >> 16;
+    uint32_t sx1 = sx + 1 < (uint32_t)src_w ? sx + 1 : sx;
+    uint32_t sy1 = sy + 1 < (uint32_t)src_h ? sy + 1 : sy;
+    uint32_t fx = (sx_fp >> 8) & 0xFFu, fy = (sy_fp >> 8) & 0xFFu;
+    uint32_t ifx = 256u - fx, ify = 256u - fy;
+    uint32_t w00 = ifx * ify;
+    uint32_t w10 = fx * ify;
+    uint32_t w01 = ifx * fy;
+    uint32_t w11 = fx * fy;
+    const unsigned char* p00 = &pixels[(sy * (uint32_t)src_w + sx) * 3u];
+    const unsigned char* p10 = &pixels[(sy * (uint32_t)src_w + sx1) * 3u];
+    const unsigned char* p01 = &pixels[(sy1 * (uint32_t)src_w + sx) * 3u];
+    const unsigned char* p11 = &pixels[(sy1 * (uint32_t)src_w + sx1) * 3u];
+    uint32_t r = (p00[0] * w00 + p10[0] * w10 + p01[0] * w01 + p11[0] * w11) >> 16;
+    uint32_t g = (p00[1] * w00 + p10[1] * w10 + p01[1] * w01 + p11[1] * w11) >> 16;
+    uint32_t b = (p00[2] * w00 + p10[2] * w10 + p01[2] * w01 + p11[2] * w11) >> 16;
+    return (r << 16) | (g << 8) | b;
+}
+
 bool cache_background_image(uint8_t* img_data, uint32_t img_size) {
     int src_w, src_h, channels;
     unsigned char* pixels = stbi_load_from_memory(img_data, img_size, &src_w, &src_h, &channels, 3);
-    if (!pixels) return false;
+    if (!pixels || src_w <= 0 || src_h <= 0 || src_w > 8192 || src_h > 8192) {
+        if (pixels) stbi_image_free(pixels);
+        return false;
+    }
+
     uint32_t target_w = vbe.width, target_h = vbe.height;
-    uint32_t* new_cache = (uint32_t*)kmalloc(target_w * target_h * sizeof(uint32_t));
+    size_t target_pixels = (size_t)target_w * (size_t)target_h;
+    uint32_t* new_cache = (uint32_t*)kmalloc(target_pixels * sizeof(uint32_t));
     if (!new_cache) { stbi_image_free(pixels); return false; }
-    int dst_x0 = ((int)target_w - src_w) / 2;
-    int dst_y0 = ((int)target_h - src_h) / 2;
-    for (int y = 0; y < src_h; y++) {
-        int dst_y = dst_y0 + y;
-        if (dst_y < 0 || dst_y >= (int)target_h) continue;
-        int src_y = src_h - 1 - y;
-        uint32_t* row = &new_cache[dst_y * target_w];
-        for (int x = 0; x < src_w; x++) {
-            int dst_x = dst_x0 + x;
-            if (dst_x < 0 || dst_x >= (int)target_w) continue;
-            int i = (src_y * src_w + x) * 3;
-            row[dst_x] = (pixels[i] << 16) | (pixels[i+1] << 8) | pixels[i+2];
+
+    /*
+     * Cover-scale the wallpaper to every framebuffer size. Mapping a centered
+     * source viewport avoids black borders; fixed-point bilinear filtering keeps
+     * the cached result smooth without requiring floating-point kernel code.
+     */
+    uint32_t view_x_fp = 0, view_y_fp = 0;
+    uint32_t view_w_fp = (uint32_t)src_w << 16;
+    uint32_t view_h_fp = (uint32_t)src_h << 16;
+    if (target_w * (uint32_t)src_h >= target_h * (uint32_t)src_w) {
+        uint32_t source_per_pixel_fp = ((uint32_t)src_w << 16) / target_w;
+        view_h_fp = target_h * source_per_pixel_fp;
+        view_y_fp = (((uint32_t)src_h << 16) - view_h_fp) / 2u;
+    } else {
+        uint32_t source_per_pixel_fp = ((uint32_t)src_h << 16) / target_h;
+        view_w_fp = target_w * source_per_pixel_fp;
+        view_x_fp = (((uint32_t)src_w << 16) - view_w_fp) / 2u;
+    }
+
+    uint32_t x_denom = target_w > 1 ? target_w - 1 : 1;
+    uint32_t y_denom = target_h > 1 ? target_h - 1 : 1;
+    uint32_t x_step_fp = (view_w_fp - 1u) / x_denom;
+    uint32_t y_step_fp = (view_h_fp - 1u) / y_denom;
+    for (uint32_t y = 0; y < target_h; y++) {
+        uint32_t sy_fp = view_y_fp + y * y_step_fp;
+        /* Preserve the asset orientation used by the existing B-nix decoder. */
+        sy_fp = (((uint32_t)src_h << 16) - 1u) - sy_fp;
+        for (uint32_t x = 0; x < target_w; x++) {
+            uint32_t sx_fp = view_x_fp + x * x_step_fp;
+            new_cache[(size_t)y * target_w + x] =
+                sample_background_bilinear(pixels, src_w, src_h, sx_fp, sy_fp);
         }
     }
+
     if (background_cache) kfree(background_cache);
-    background_cache = new_cache; background_cache_w = target_w; background_cache_h = target_h;
+    background_cache = new_cache;
+    background_cache_w = target_w;
+    background_cache_h = target_h;
     stbi_image_free(pixels);
     return true;
 }
 
+static void draw_procedural_aurora_background(void) {
+    uint32_t width = vbe.width, height = vbe.height;
+    uint32_t safe_w = width > 1 ? width - 1 : 1;
+    uint32_t safe_h = height > 1 ? height - 1 : 1;
+    int band_half = (int)height / 3;
+    if (band_half < 1) band_half = 1;
+
+    uint32_t x_step = (255u << 16) / safe_w;
+    uint32_t y_step = (255u << 16) / safe_h;
+    uint32_t glow_scale = (72u << 16) / (uint32_t)band_half;
+    uint32_t yn_fp = 0;
+    for (uint32_t y = 0; y < height; y++, yn_fp += y_step) {
+        uint32_t yn = yn_fp >> 16;
+        uint32_t xn_fp = 0;
+        for (uint32_t x = 0; x < width; x++, xn_fp += x_step) {
+            uint32_t xn = xn_fp >> 16;
+            int band_center = (int)height / 2 + ((int)x - (int)width / 2) / 5;
+            int distance = (int)y - band_center;
+            if (distance < 0) distance = -distance;
+            uint32_t glow = distance < band_half
+                ? ((uint32_t)(band_half - distance) * glow_scale) >> 16 : 0u;
+
+            uint32_t r = 10u + (xn * 28u) / 255u + (yn * 10u) / 255u;
+            uint32_t g = 18u + (yn * 25u) / 255u + glow / 2u;
+            uint32_t b = 43u + (xn * 58u) / 255u + glow;
+            if (r > 255u) r = 255u;
+            if (g > 255u) g = 255u;
+            if (b > 255u) b = 255u;
+            backbuffer[(size_t)y * width + x] = (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
 void draw_cached_background(void) {
-    if (!background_cache || background_cache_w != vbe.width || background_cache_h != vbe.height) { clear_screen(0x000000); return; }
-    // Фон завжди малюється на backbuffer екрану
+    if (!background_cache || background_cache_w != vbe.width || background_cache_h != vbe.height) {
+        /*
+         * High-resolution modes can exhaust the early fixed heap while PNG
+         * decoding peaks. Keep a resolution-independent Aurora desktop instead
+         * of presenting a broken black screen.
+         */
+        draw_procedural_aurora_background();
+        return;
+    }
     memcpy(backbuffer, background_cache, vbe.width * vbe.height * sizeof(uint32_t));
 }

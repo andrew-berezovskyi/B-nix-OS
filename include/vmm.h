@@ -2,6 +2,7 @@
 #define VMM_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Прапорці доступу до сторінки
 #define PTE_PRESENT  0x01
@@ -10,7 +11,7 @@
 
 extern uint32_t* kernel_directory;
 
-void init_vmm(void);
+bool init_vmm(void);
 
 // 🔥 НОВІ ФУНКЦІЇ ЛІНУКС-СТАЙЛ:
 // 1. Створює новий, чистий адресний простір для програми

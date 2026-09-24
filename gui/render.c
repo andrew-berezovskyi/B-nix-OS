@@ -2,9 +2,12 @@
 #include "vbe.h"
 #include "rtc.h"
 
-#define DESKTOP_TOP_BAR_H   32
-#define DESKTOP_DOCK_W      60
-#define DESKTOP_TITLE_H     32
+#define DESKTOP_TOP_BAR_H   34
+#define DESKTOP_DOCK_W      360
+#define DESKTOP_DOCK_H      70
+#define DESKTOP_DOCK_MARGIN 18
+
+static int dock_lift[5] = {0, 0, 0, 0, 0};
 
 // УВАГА: draw_rect_outline та draw_filled_rect перенесено у vbe.c для апаратного прискорення!
 
@@ -49,55 +52,107 @@ static void format_rtc_datetime_kali(char* out, size_t cap) {
     out[p] = '\0';
 }
 
-static void draw_desktop_dock_blend(uint32_t w, uint32_t h) {
-    const uint32_t dock_c = 0x111111; const uint8_t alpha = 200;
-    for (int y = (int)DESKTOP_TOP_BAR_H; y < (int)h; y++) {
-        for (int x = 0; x < DESKTOP_DOCK_W; x++) {
-            uint32_t bg = get_pixel(x, y);
-            uint8_t br = (uint8_t)(bg >> 16), bg_g = (uint8_t)(bg >> 8), bb = (uint8_t)bg;
-            uint8_t fr = (uint8_t)(dock_c >> 16), fg = (uint8_t)(dock_c >> 8), fb = (uint8_t)dock_c;
-            uint8_t r = (uint8_t)((fr * alpha + br * (255 - alpha)) >> 8);
-            uint8_t g = (uint8_t)((fg * alpha + bg_g * (255 - alpha)) >> 8);
-            uint8_t b = (uint8_t)((fb * alpha + bb * (255 - alpha)) >> 8);
-            draw_pixel(x, y, (r << 16) | (g << 8) | b);
-        }
+static void draw_desktop_dock(uint32_t w, uint32_t h) {
+    int dock_x = ((int)w - DESKTOP_DOCK_W) / 2;
+    int dock_y = (int)h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN;
+    draw_rounded_rect(dock_x + 3, dock_y + 5, DESKTOP_DOCK_W, DESKTOP_DOCK_H, 18, 0x111827);
+    draw_rounded_rect(dock_x, dock_y, DESKTOP_DOCK_W, DESKTOP_DOCK_H, 18, 0xE8EDF5);
+    draw_rounded_rect(dock_x + 2, dock_y + 2, DESKTOP_DOCK_W - 4, DESKTOP_DOCK_H - 4, 16, 0xC8D1DF);
+    draw_rounded_rect(dock_x + 3, dock_y + 3, DESKTOP_DOCK_W - 6, DESKTOP_DOCK_H - 6, 15, 0x202938);
+}
+
+static void draw_dock_icon(int x, int y, uint32_t accent, const char* label, bool running) {
+    draw_rounded_rect(x + 2, y + 3, 48, 48, 12, 0x111722);
+    draw_rounded_rect(x, y, 48, 48, 12, accent);
+    draw_rounded_rect(x + 5, y + 5, 38, 38, 9, 0xF7FAFF);
+    if (main_font_data) {
+        int tw = measure_ttf_text_width(main_font_data, label, 17.0f);
+        draw_ttf_string(x + (48 - tw) / 2, y + 31, main_font_data, label, 17.0f, 0x172033);
     }
-    draw_filled_rect(DESKTOP_DOCK_W - 2, DESKTOP_TOP_BAR_H + 4, 2, (int)h - DESKTOP_TOP_BAR_H - 4, 0x2A4A66);
+    if (running) draw_rounded_rect(x + 18, y + 55, 12, 3, 1, 0x70A7FF);
 }
 
-static void draw_dock_icon_placeholder(int x, int y, uint32_t accent) {
-    draw_filled_rect(x, y, 40, 40, 0x2A2F38); 
-    draw_rect_outline(x, y, 40, 40, accent);
-    draw_filled_rect(x, y+36, 40, 4, accent); 
-}
+static void draw_status_tray_icons(int x, int y0) {
+    /* Wi-Fi-like signal, intentionally original B-nix geometry. */
+    draw_filled_circle(x + 8, y0 + 9, 2, 0xE8EEF8);
+    draw_rect_outline(x + 4, y0 + 5, 9, 7, 0xAFC0D8);
+    draw_rect_outline(x + 1, y0 + 2, 15, 12, 0x70839D);
 
-static void draw_status_tray_icons(int right_x, int y0) {
-    int x = right_x;
-    draw_filled_rect(x, y0, 18, 10, 0x3A3A3A); draw_filled_rect(x + 18, y0 + 2, 3, 6, 0x3A3A3A); draw_filled_rect(x + 3, y0 + 2, 10, 6, 0x55AA66); x += 28;
-    draw_pixel(x + 8, y0 + 8, 0xCCCCCC); draw_rect_outline(x + 4, y0 + 4, 8, 6, 0xAAAAAA); draw_rect_outline(x + 2, y0 + 2, 12, 10, 0x888888); x += 28;
-    draw_filled_rect(x, y0 + 4, 4, 8, 0xCCCCCC); draw_filled_rect(x + 4, y0 + 2, 10, 12, 0x666666);
+    x += 25;
+    draw_rounded_rect(x, y0 + 2, 21, 11, 3, 0xAFC0D8);
+    draw_rounded_rect(x + 2, y0 + 4, 15, 7, 2, 0x78D6B0);
+    draw_filled_rect(x + 21, y0 + 5, 2, 5, 0xAFC0D8);
 }
 
 void draw_top_bar_kali(uint32_t w) {
-    draw_filled_rect(0, 0, w, DESKTOP_TOP_BAR_H, 0x111111);
-    draw_filled_rect(0, DESKTOP_TOP_BAR_H - 1, w, 1, 0x000000); 
-    
-    const int bl = 22;
-    if (main_font_data) {
-        draw_ttf_string(14, bl, main_font_data, "Activities", 15.0f, 0xE8E8E8);
-        int ix = 110; draw_filled_rect(ix, 8, 18, 16, 0x4A90D9); draw_filled_rect(ix + 24, 8, 18, 16, 0x2D2D2D); draw_filled_rect(ix + 52, 8, 18, 16, 0x3D3D3D);
-        char dt[32]; format_rtc_datetime_kali(dt, sizeof(dt));
-        int tw = measure_ttf_text_width(main_font_data, dt, 15.0f);
-        draw_ttf_string((int)((w - (uint32_t)tw) / 2), bl, main_font_data, dt, 15.0f, 0xE8E8E8);
-        draw_status_tray_icons((int)w - 118, 11);
+    /* A compact floating control surface instead of the old solid taskbar. */
+    draw_filled_rect(0, 0, w, DESKTOP_TOP_BAR_H, 0x121826);
+    draw_filled_rect(0, DESKTOP_TOP_BAR_H - 1, w, 1, 0x465A78);
+
+    if (!main_font_data) return;
+
+    draw_rounded_rect(8, 5, 92, 24, 10, 0x253149);
+    draw_filled_circle(21, 17, 8, 0x78AFFF);
+    draw_ttf_string(18, 21, main_font_data, "B", 11.0f, 0xFFFFFF);
+    draw_ttf_string(34, 22, main_font_data, "B-nix", 14.0f, 0xF7FAFF);
+
+    if (w >= 700) {
+        draw_rounded_rect(108, 5, 92, 24, 10, 0x1B2537);
+        draw_ttf_string(123, 22, main_font_data, "Workspace", 13.0f, 0xB9C6D8);
     }
+
+    char dt[32];
+    format_rtc_datetime_kali(dt, sizeof(dt));
+    int dtw = measure_ttf_text_width(main_font_data, dt, 13.0f);
+    int tray_w = dtw + 72;
+    if (tray_w < 178) tray_w = 178;
+    int tray_x = (int)w - tray_w - 8;
+    if (tray_x < 210) tray_x = 210;
+    draw_rounded_rect(tray_x, 5, tray_w, 24, 10, 0x253149);
+    draw_status_tray_icons(tray_x + 12, 9);
+    draw_ttf_string(tray_x + 58, 22, main_font_data, dt, 13.0f, 0xEDF3FA);
+
+    if (w >= 980) {
+        const char* state = "Aurora desktop";
+        int sw = measure_ttf_text_width(main_font_data, state, 13.0f);
+        draw_ttf_string(((int)w - sw) / 2, 22, main_font_data, state, 13.0f, 0xAFC0D8);
+    }
+}
+
+static int animated_dock_y(int base_y, int index) {
+    int target = dock_hover_index == index ? 7 : 0;
+    if (dock_lift[index] < target) dock_lift[index]++;
+    else if (dock_lift[index] > target) dock_lift[index]--;
+    return base_y - dock_lift[index];
+}
+
+static void draw_dock_tooltip(int dock_x, int dock_y) {
+    if (!main_font_data || dock_hover_index < 0 || dock_hover_index >= 5) return;
+    static const char* labels[5] = {
+        "Terminal", "Files", "Notes", "About", "Settings"
+    };
+    const char* label = labels[dock_hover_index];
+    int tw = measure_ttf_text_width(main_font_data, label, 12.0f);
+    int center_x = dock_x + 42 + dock_hover_index * 60;
+    int tip_w = tw + 20;
+    int tip_x = center_x - tip_w / 2;
+    draw_rounded_rect(tip_x + 2, dock_y - 31, tip_w, 23, 8, 0x101521);
+    draw_rounded_rect(tip_x, dock_y - 33, tip_w, 23, 8, 0xEEF3FA);
+    draw_ttf_string(tip_x + 10, dock_y - 17, main_font_data, label, 12.0f, 0x263449);
 }
 
 void draw_desktop_chrome(uint32_t w, uint32_t h) {
-    draw_top_bar_kali(w); draw_desktop_dock_blend(w, h);
-    for (int i = 0; i < 3; i++) {
-        uint32_t ac = (i == 0) ? 0x4A90D9 : ((i == 1) ? 0x00A0C8 : 0x666666);
-        draw_dock_icon_placeholder(10, DESKTOP_TOP_BAR_H + 14 + i * 58, ac);
-    }
-}
+    draw_top_bar_kali(w);
+    draw_desktop_dock(w, h);
 
+    int dock_x = ((int)w - DESKTOP_DOCK_W) / 2;
+    int dock_y = (int)h - DESKTOP_DOCK_H - DESKTOP_DOCK_MARGIN;
+    int icon_y = dock_y + 10;
+    draw_dock_icon(dock_x + 18,  animated_dock_y(icon_y, 0), 0x6EA8FF, ">", windows[0].is_open);
+    draw_dock_icon(dock_x + 78,  animated_dock_y(icon_y, 1), 0x78D6B0, "F", windows[1].is_open);
+    draw_dock_icon(dock_x + 138, animated_dock_y(icon_y, 2), 0xF2C66D, "N", windows[2].is_open);
+    draw_filled_rect(dock_x + 202, dock_y + 13, 1, 43, 0x526176);
+    draw_dock_icon(dock_x + 218, animated_dock_y(icon_y, 3), 0xB39DDB, "A", windows[3].is_open);
+    draw_dock_icon(dock_x + 278, animated_dock_y(icon_y, 4), 0xF08C8C, "S", windows[4].is_open);
+    draw_dock_tooltip(dock_x, dock_y);
+}

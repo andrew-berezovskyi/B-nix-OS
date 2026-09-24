@@ -1,0 +1,7 @@
+NAME="B-nix OS"
+PRETTY_NAME="B-nix OS Aurora (Linux hybrid)"
+ID=bnix
+VERSION_ID="0.3-dev"
+VERSION_CODENAME=aurora
+HOME_URL="https://github.com/andrew-berezovskyi/B-nix-OS"
+BUG_REPORT_URL="https://github.com/andrew-berezovskyi/B-nix-OS/issues"

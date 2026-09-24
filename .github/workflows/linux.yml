@@ -1,0 +1,54 @@
+name: linux-build-and-boot
+
+on:
+  push:
+    branches: [main, "codex/**"]
+    paths:
+      - "linux/**"
+      - "scripts/qemu-linux-smoke.sh"
+      - ".github/workflows/linux.yml"
+  pull_request:
+    paths:
+      - "linux/**"
+      - "scripts/qemu-linux-smoke.sh"
+      - ".github/workflows/linux.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b-nix-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BR2_DL_DIR: ${{ github.workspace }}/build/linux-dl
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Buildroot host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison cpio file flex git libelf-dev libncurses-dev qemu-system-x86 rsync socat unzip wget
+      - name: Cache upstream downloads
+        uses: actions/cache@v4
+        with:
+          path: build/linux-dl
+          key: bnix-buildroot-2026.08-${{ runner.os }}
+      - name: Build B-nix Linux image
+        run: bash linux/build.sh
+      - name: Boot Linux image and verify network and graphics
+        run: bash scripts/qemu-linux-smoke.sh
+      - name: Upload Linux image and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b-nix-linux-build
+          path: |
+            build/linux-output/images/bzImage
+            build/linux-output/images/rootfs.ext4
+            build/qemu-linux-serial.log
+            build/qemu-linux-screen.ppm
+            run-b-nix.ps1

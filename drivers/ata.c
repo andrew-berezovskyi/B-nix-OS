@@ -1,74 +1,56 @@
 #include "ata.h"
 #include "io.h"
 
-// Стандартні порти первинного (Primary) ATA-контролера
-#define ATA_PORT_DATA       0x1F0
-#define ATA_PORT_ERROR      0x1F1
-#define ATA_PORT_SECT_COUNT 0x1F2
-#define ATA_PORT_LBA_LOW    0x1F3
-#define ATA_PORT_LBA_MID    0x1F4
-#define ATA_PORT_LBA_HIGH   0x1F5
-#define ATA_PORT_DRV_HEAD   0x1F6
-#define ATA_PORT_STATUS     0x1F7
-#define ATA_PORT_COMMAND    0x1F7
+#define ATA_DATA       0x1F0
+#define ATA_SECT_COUNT 0x1F2
+#define ATA_LBA_LOW    0x1F3
+#define ATA_LBA_MID    0x1F4
+#define ATA_LBA_HIGH   0x1F5
+#define ATA_DRIVE      0x1F6
+#define ATA_STATUS     0x1F7
+#define ATA_COMMAND    0x1F7
 
-// Статусні біти диска
-#define ATA_SR_BSY     0x80    // Busy (диск зайнятий)
-#define ATA_SR_DRQ     0x08    // Data request (диск готовий віддати/прийняти дані)
+#define ATA_SR_ERR 0x01
+#define ATA_SR_DRQ 0x08
+#define ATA_SR_DF  0x20
+#define ATA_SR_BSY 0x80
+#define ATA_TIMEOUT 1000000U
 
-// Чекаємо, поки диск перестане бути "зайнятим"
-static void ata_wait_bsy(void) {
-    while (inb(ATA_PORT_STATUS) & ATA_SR_BSY);
-}
-
-// Чекаємо, поки диск скаже "давай дані"
-static void ata_wait_drq(void) {
-    while (!(inb(ATA_PORT_STATUS) & ATA_SR_DRQ));
-}
-
-// Читання сектора з диска
-void ata_read_sector(uint32_t lba, uint8_t* buffer) {
-    ata_wait_bsy();
-    
-    // Вибір диска (Master) та налаштування режиму LBA (біти 24-27)
-    outb(ATA_PORT_DRV_HEAD, 0xE0 | ((lba >> 24) & 0x0F)); 
-    outb(ATA_PORT_SECT_COUNT, 1);                         // Читаємо рівно 1 сектор
-    outb(ATA_PORT_LBA_LOW, (uint8_t) lba);                // Молодші 8 біт адреси
-    outb(ATA_PORT_LBA_MID, (uint8_t)(lba >> 8));          // Середні 8 біт
-    outb(ATA_PORT_LBA_HIGH, (uint8_t)(lba >> 16));        // Старші 8 біт
-    outb(ATA_PORT_COMMAND, 0x20);                         // 0x20 = Команда READ SECTORS
-
-    ata_wait_bsy();
-    ata_wait_drq();
-
-    // Читаємо 256 слів (тобто 512 байт, бо 1 слово = 2 байти)
-    uint16_t* ptr = (uint16_t*) buffer;
-    for (int i = 0; i < 256; i++) {
-        ptr[i] = inw(ATA_PORT_DATA);
+static int ata_wait(int require_drq) {
+    for (uint32_t i = 0; i < ATA_TIMEOUT; ++i) {
+        uint8_t status = inb(ATA_STATUS);
+        if (status == 0x00 || status == 0xFF) continue;
+        if (status & (ATA_SR_ERR | ATA_SR_DF)) return -1;
+        if (!(status & ATA_SR_BSY) && (!require_drq || (status & ATA_SR_DRQ))) return 0;
     }
+    return -1;
 }
 
-// Запис сектора на диск
-void ata_write_sector(uint32_t lba, uint8_t* buffer) {
-    ata_wait_bsy();
-    
-    outb(ATA_PORT_DRV_HEAD, 0xE0 | ((lba >> 24) & 0x0F)); 
-    outb(ATA_PORT_SECT_COUNT, 1);                         
-    outb(ATA_PORT_LBA_LOW, (uint8_t) lba);                
-    outb(ATA_PORT_LBA_MID, (uint8_t)(lba >> 8));          
-    outb(ATA_PORT_LBA_HIGH, (uint8_t)(lba >> 16));        
-    outb(ATA_PORT_COMMAND, 0x30);                         // 0x30 = Команда WRITE SECTORS
+static void ata_select(uint32_t lba) {
+    outb(ATA_DRIVE, (uint8_t)(0xE0U | ((lba >> 24) & 0x0FU)));
+    outb(ATA_SECT_COUNT, 1);
+    outb(ATA_LBA_LOW, (uint8_t)lba);
+    outb(ATA_LBA_MID, (uint8_t)(lba >> 8));
+    outb(ATA_LBA_HIGH, (uint8_t)(lba >> 16));
+}
 
-    ata_wait_bsy();
-    ata_wait_drq();
+int ata_read_sector(uint32_t lba, uint8_t* buffer) {
+    if (!buffer || ata_wait(0) != 0) return -1;
+    ata_select(lba);
+    outb(ATA_COMMAND, 0x20);
+    if (ata_wait(1) != 0) return -1;
+    uint16_t* words = (uint16_t*)buffer;
+    for (uint32_t i = 0; i < 256; ++i) words[i] = inw(ATA_DATA);
+    return 0;
+}
 
-    // Пишемо 256 слів (512 байт)
-    uint16_t* ptr = (uint16_t*) buffer;
-    for (int i = 0; i < 256; i++) {
-        outw(ATA_PORT_DATA, ptr[i]);
-    }
-    
-    // Скидаємо кеш диска (Cache Flush), щоб дані точно записалися на бліни диска
-    outb(ATA_PORT_COMMAND, 0xE7);
-    ata_wait_bsy();
+int ata_write_sector(uint32_t lba, const uint8_t* buffer) {
+    if (!buffer || ata_wait(0) != 0) return -1;
+    ata_select(lba);
+    outb(ATA_COMMAND, 0x30);
+    if (ata_wait(1) != 0) return -1;
+    const uint16_t* words = (const uint16_t*)buffer;
+    for (uint32_t i = 0; i < 256; ++i) outw(ATA_DATA, words[i]);
+    outb(ATA_COMMAND, 0xE7);
+    return ata_wait(0);
 }
