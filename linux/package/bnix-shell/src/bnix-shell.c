@@ -169,7 +169,7 @@ static void draw_about(struct surface *s, int x, int y, uint32_t fg, uint32_t mu
     text(s, x, y + 154, "B-NIX HYBRID PLATFORM", 2, muted);
 }
 
-static void render(struct surface *s, enum page active) {
+static void render(struct surface *s, enum page active, int cursor_x, int cursor_y) {
     int w = (int)s->var.xres, h = (int)s->var.yres;
     uint32_t navy = color(s, 7, 15, 34), blue = color(s, 24, 74, 146);
     uint32_t panel = color(s, 20, 31, 54), panel2 = color(s, 31, 45, 72);
@@ -226,6 +226,9 @@ static void render(struct surface *s, enum page active) {
         text(s, dock_x + gap * (i + 1) - 5, dock_y + dock_h / 2 - 7, label, 2, navy);
     }
     text(s, 16, h - 15, "1 FILES  2 NETWORK  3 SETTINGS  4 ABOUT  ESC HOME", 1, muted);
+    for (int row = 0; row < 18; ++row)
+        for (int col = 0; col <= row / 2; ++col)
+            pixel(s, cursor_x + col, cursor_y + row, white);
 }
 
 #define BITS_PER_LONG (sizeof(unsigned long) * 8u)
@@ -247,12 +250,45 @@ static int find_keyboard(void) {
     return -1;
 }
 
+static int find_pointer(void) {
+    for (int index = 0; index < 16; ++index) {
+        char path[32];
+        (void)snprintf(path, sizeof path, "/dev/input/event%d", index);
+        int fd = open(path, O_RDONLY | O_NONBLOCK);
+        if (fd < 0) continue;
+        unsigned long keys[(KEY_MAX + BITS_PER_LONG) / BITS_PER_LONG];
+        unsigned long relative[(REL_MAX + BITS_PER_LONG) / BITS_PER_LONG];
+        memset(keys, 0, sizeof keys);
+        memset(relative, 0, sizeof relative);
+        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof keys), keys) >= 0 &&
+            ioctl(fd, EVIOCGBIT(EV_REL, sizeof relative), relative) >= 0 &&
+            (keys[BIT_WORD(BTN_LEFT)] & BIT_MASK(BTN_LEFT)) &&
+            (relative[BIT_WORD(REL_X)] & BIT_MASK(REL_X))) return fd;
+        close(fd);
+    }
+    return -1;
+}
+
 static enum page key_page(unsigned code, enum page current) {
     if (code == KEY_1 || code == KEY_F) return PAGE_FILES;
     if (code == KEY_2 || code == KEY_N) return PAGE_NETWORK;
     if (code == KEY_3 || code == KEY_S) return PAGE_SETTINGS;
     if (code == KEY_4 || code == KEY_A) return PAGE_ABOUT;
     if (code == KEY_ESC || code == KEY_H) return PAGE_HOME;
+    return current;
+}
+
+static enum page click_page(const struct surface *s, int x, int y, enum page current) {
+    int w = (int)s->var.xres, h = (int)s->var.yres;
+    int dock_w = w < 700 ? w - 40 : 430, dock_h = h < 500 ? 60 : 76;
+    int dock_x = (w - dock_w) / 2, dock_y = h - dock_h - 22;
+    if (y < dock_y || y >= dock_y + dock_h) return current;
+    int gap = dock_w / 5;
+    for (int i = 0; i < 4; ++i) {
+        int center = dock_x + gap * (i + 1);
+        if (x >= center - dock_h / 3 && x <= center + dock_h / 3)
+            return (enum page)(PAGE_FILES + i);
+    }
     return current;
 }
 
@@ -282,39 +318,58 @@ int main(void) {
         return 1;
     }
 
-    int keyboard = find_keyboard();
+    int keyboard = find_keyboard(), pointer = find_pointer();
+    int cursor_x = (int)s.var.xres / 2, cursor_y = (int)s.var.yres / 2;
     enum page active = PAGE_HOME;
-    render(&s, active);
+    render(&s, active, cursor_x, cursor_y);
 
     int console = open("/dev/console", O_WRONLY);
     if (console >= 0) {
         dprintf(console, "[BNIX-GUI] shell ready %ux%u@%u\n", s.var.xres, s.var.yres, s.var.bits_per_pixel);
         dprintf(console, keyboard >= 0 ? "[BNIX-GUI] input ready\n" : "[BNIX-GUI] input unavailable\n");
+        dprintf(console, pointer >= 0 ? "[BNIX-GUI] pointer ready\n" : "[BNIX-GUI] pointer unavailable\n");
         close(console);
     }
 
     for (;;) {
-        if (keyboard < 0) {
-            sleep(1);
-            keyboard = find_keyboard();
-            render(&s, active);
-            continue;
-        }
-        struct pollfd descriptor = {.fd = keyboard, .events = POLLIN};
-        int result = poll(&descriptor, 1, 1000);
-        if (result > 0 && (descriptor.revents & POLLIN)) {
-            struct input_event events[16];
-            ssize_t count = read(keyboard, events, sizeof events);
-            if (count > 0) {
+        if (keyboard < 0) keyboard = find_keyboard();
+        if (pointer < 0) pointer = find_pointer();
+
+        struct pollfd descriptors[2];
+        nfds_t descriptor_count = 0;
+        if (keyboard >= 0) descriptors[descriptor_count++] = (struct pollfd){.fd = keyboard, .events = POLLIN};
+        if (pointer >= 0) descriptors[descriptor_count++] = (struct pollfd){.fd = pointer, .events = POLLIN};
+
+        int result = poll(descriptors, descriptor_count, 1000);
+        if (result < 0 && errno != EINTR) {
+            if (keyboard >= 0) close(keyboard);
+            if (pointer >= 0) close(pointer);
+            keyboard = pointer = -1;
+        } else if (result > 0) {
+            for (nfds_t descriptor = 0; descriptor < descriptor_count; ++descriptor) {
+                if (!(descriptors[descriptor].revents & POLLIN)) continue;
+                struct input_event events[16];
+                ssize_t count = read(descriptors[descriptor].fd, events, sizeof events);
+                if (count <= 0) continue;
                 size_t total = (size_t)count / sizeof events[0];
-                for (size_t i = 0; i < total; ++i)
-                    if (events[i].type == EV_KEY && events[i].value == 1)
+                for (size_t i = 0; i < total; ++i) {
+                    if (descriptors[descriptor].fd == keyboard &&
+                        events[i].type == EV_KEY && events[i].value == 1)
                         active = key_page(events[i].code, active);
+                    if (descriptors[descriptor].fd == pointer && events[i].type == EV_REL) {
+                        if (events[i].code == REL_X) cursor_x += events[i].value;
+                        if (events[i].code == REL_Y) cursor_y += events[i].value;
+                    }
+                    if (descriptors[descriptor].fd == pointer && events[i].type == EV_KEY &&
+                        events[i].code == BTN_LEFT && events[i].value == 1)
+                        active = click_page(&s, cursor_x, cursor_y, active);
+                }
             }
-        } else if (result < 0 && errno != EINTR) {
-            close(keyboard);
-            keyboard = -1;
         }
-        render(&s, active);
+        if (cursor_x < 0) cursor_x = 0;
+        if (cursor_y < 0) cursor_y = 0;
+        if (cursor_x >= (int)s.var.xres) cursor_x = (int)s.var.xres - 1;
+        if (cursor_y >= (int)s.var.yres) cursor_y = (int)s.var.yres - 1;
+        render(&s, active, cursor_x, cursor_y);
     }
 }
