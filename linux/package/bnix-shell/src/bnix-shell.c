@@ -114,7 +114,7 @@ static void draw_files(struct surface *s, int x, int y, uint32_t fg, uint32_t mu
     while ((entry = readdir(dir)) != NULL && row < 7) {
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
         char line[48];
-        (void)snprintf(line, sizeof line, "/%s", entry->d_name);
+        (void)snprintf(line, sizeof line, "/%.46s", entry->d_name);
         text(s, x, y + 36 + row * 25, line, 2, row == 0 ? fg : muted);
         ++row;
     }
