@@ -311,9 +311,23 @@ int main(void) {
     }
 
     s.length = s.fix.smem_len ? s.fix.smem_len : (size_t)s.fix.line_length * s.var.yres;
-    s.pixels = mmap(NULL, s.length, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0);
-    if (s.pixels == MAP_FAILED) {
+    uint8_t *display_pixels = mmap(NULL, s.length, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0);
+    if (display_pixels == MAP_FAILED) {
         fprintf(stderr, "bnix-shell: mmap failed: %s\n", strerror(errno));
+        close(fb);
+        return 1;
+    }
+
+    /*
+     * Draw into regular RAM and publish a complete frame with one memcpy.
+     * Rendering directly into /dev/fb0 lets the display scan out hundreds of
+     * partially-painted rectangles, which looks like large pieces of the
+     * desktop disappearing while the cursor moves.
+     */
+    s.pixels = calloc(1, s.length);
+    if (!s.pixels) {
+        fprintf(stderr, "bnix-shell: back buffer allocation failed: %s\n", strerror(errno));
+        munmap(display_pixels, s.length);
         close(fb);
         return 1;
     }
@@ -322,6 +336,7 @@ int main(void) {
     int cursor_x = (int)s.var.xres / 2, cursor_y = (int)s.var.yres / 2;
     enum page active = PAGE_HOME;
     render(&s, active, cursor_x, cursor_y);
+    memcpy(display_pixels, s.pixels, s.length);
 
     int console = open("/dev/console", O_WRONLY);
     if (console >= 0) {
@@ -371,5 +386,6 @@ int main(void) {
         if (cursor_x >= (int)s.var.xres) cursor_x = (int)s.var.xres - 1;
         if (cursor_y >= (int)s.var.yres) cursor_y = (int)s.var.yres - 1;
         render(&s, active, cursor_x, cursor_y);
+        memcpy(display_pixels, s.pixels, s.length);
     }
 }
