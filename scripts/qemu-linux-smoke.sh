@@ -47,7 +47,8 @@ for _ in $(seq 1 120); do
     fi
     if grep -Fq '[BNIX-LINUX] BNIX_LINUX_BOOT_OK' "$serial_log" &&
        grep -Fq '[BNIX-LINUX] network ready' "$serial_log" &&
-       grep -Fq '[BNIX-GUI] shell ready' "$serial_log"; then
+       grep -Fq '[BNIX-GUI] shell ready' "$serial_log" &&
+       grep -Fq '[BNIX-GUI] input ready' "$serial_log"; then
         ready=1
         break
     fi
@@ -55,7 +56,7 @@ for _ in $(seq 1 120); do
 done
 
 if [[ $ready -ne 1 ]]; then
-    echo "B-nix did not reach boot, network, and graphical readiness" >&2
+    echo "B-nix did not reach boot, network, graphical, and input readiness" >&2
     tail -n 160 "$serial_log" >&2
     exit 1
 fi
@@ -70,5 +71,5 @@ sleep 2
 printf 'screendump %s\n' "$screen_dump" | socat - "UNIX-CONNECT:$monitor_socket"
 [[ -s "$screen_dump" ]] || { echo "B-nix graphical screenshot was not created" >&2; exit 1; }
 
-echo "B-nix Linux boot, network, and graphical shell smoke test passed."
+echo "B-nix Linux boot, network, graphical shell, and input smoke test passed."
 echo "Graphical checkpoint: $screen_dump"
